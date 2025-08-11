@@ -32,13 +32,14 @@
 #   • Runs backend and frontend tests
 #   • Verifies service health and accessibility
 #
-# Usage: ./setup.sh [--clean] [--skip-tests]
+# Usage: ./setup.sh [--clean] [--skip-tests] [--skip-browser]
 # Options:
 #   --clean: Remove existing environments and start fresh
 #            • Removes Python virtual environment
 #            • Cleans Node.js dependencies
 #            • Removes Docker volumes
 #   --skip-tests: Skip running tests during setup
+#   --skip-browser: Skip automatically opening browser tabs
 #
 # Status Checks:
 # - Verifies Docker Desktop is running (auto-starts on macOS)
@@ -68,6 +69,7 @@ print_section() {
 # Parse arguments
 CLEAN=false
 SKIP_TESTS=false
+SKIP_BROWSER=false
 for arg in "$@"; do
     case $arg in
         --clean)
@@ -76,6 +78,10 @@ for arg in "$@"; do
             ;;
         --skip-tests)
             SKIP_TESTS=true
+            shift
+            ;;
+        --skip-browser)
+            SKIP_BROWSER=true
             shift
             ;;
     esac
@@ -448,6 +454,35 @@ if [ "$SKIP_TESTS" = false ]; then
     docker compose -f infra/docker-compose.yml exec -T frontend npm test
 fi
 
+# Function to open URL in browser
+open_url() {
+    local url=$1
+    echo -e "${INFO} Opening $url in browser..."
+    
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS
+        open "$url"
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        # Linux
+        if command_exists "xdg-open"; then
+            xdg-open "$url"
+        elif command_exists "firefox"; then
+            firefox "$url" &
+        elif command_exists "google-chrome"; then
+            google-chrome "$url" &
+        elif command_exists "chromium"; then
+            chromium "$url" &
+        else
+            echo -e "${ERROR} Could not find a browser to open $url"
+        fi
+    elif [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]]; then
+        # Windows (Git Bash or Cygwin)
+        start "$url"
+    else
+        echo -e "${ERROR} Unsupported OS type: $OSTYPE"
+    fi
+}
+
 # Final status check
 print_section "Service Status"
 BACKEND_HEALTH=$(curl -s http://localhost:8000/health)
@@ -472,6 +507,27 @@ echo -e "  • Backend API: http://localhost:8000"
 echo -e "  • API Documentation: http://localhost:8000/docs"
 echo -e "  • PostgreSQL: localhost:5432"
 echo -e "  • Neo4j Browser: http://localhost:7474 (if enabled)"
+
+# Open browser tabs
+if [ "$SKIP_BROWSER" = false ]; then
+    echo -e "\n${INFO} Opening services in browser..."
+    sleep 2  # Brief pause to ensure services are fully ready
+
+    # Open frontend
+    open_url "http://localhost:5173"
+    sleep 1  # Small delay between opening tabs
+
+    # Open backend health endpoint
+    open_url "http://localhost:8000/health"
+    sleep 1
+
+    # Open API documentation
+    open_url "http://localhost:8000/docs"
+
+    echo -e "\n${SUCCESS} Browser tabs opened!"
+else
+    echo -e "\n${INFO} Skipping browser opening (--skip-browser flag used)"
+fi
 echo -e "\nUseful commands:"
 echo -e "  • View logs: make logs"
 echo -e "  • Stop services: make down"
