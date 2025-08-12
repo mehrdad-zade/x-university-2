@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     
     # Basic app settings
     DEBUG: bool = True
-    SECRET_KEY: str = "change-me-in-production"
+    SECRET_KEY: str = "dev-secret-key-change-in-production-minimum-32-chars"
     ALLOWED_ORIGINS: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
     
     # Database settings
@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     # JWT settings
     ACCESS_TOKEN_EXPIRES_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRES_DAYS: int = 7
+    ALGORITHM: str = "HS256"
     
     # External API keys
     OPENAI_API_KEY: str = ""

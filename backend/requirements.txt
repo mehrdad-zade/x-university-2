@@ -3,8 +3,10 @@ uvicorn[standard]==0.27.1
 pydantic==2.5.3
 pydantic-core==2.14.6
 pydantic-settings==2.1.0
+PyJWT==2.8.0
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
+bcrypt==4.1.2
 psycopg[binary]==3.2.9
 SQLAlchemy==2.0.23
 asyncpg==0.29.0
@@ -14,6 +16,8 @@ structlog==23.2.0
 neo4j==5.15.0
 pytest==7.4.3
 pytest-asyncio==0.23.2
-mypy==1.7.1
+mypy==1.8.0
 ruff==0.1.6
 python-multipart>=0.0.7
+psutil==6.1.0
+docker==7.1.0

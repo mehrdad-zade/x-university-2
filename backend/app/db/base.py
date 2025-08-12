@@ -50,3 +50,8 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
             yield session
         finally:
             await session.close()
+
+
+# Import all models here to ensure they're registered with Base.metadata
+# This is required for Alembic autogenerate to work properly
+# Import moved to avoid circular imports - will be imported during app startup

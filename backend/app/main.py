@@ -10,6 +10,9 @@ import structlog
 from app.core.config import settings
 from app.api.main import api_router
 
+# Import models to ensure they're registered with SQLAlchemy
+from app.models import auth  # noqa: F401
+
 # Configure structured logging
 structlog.configure(
     processors=[

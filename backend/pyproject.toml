@@ -35,3 +35,6 @@ target-version = ["py312"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
+filterwarnings = [
+    "ignore::PendingDeprecationWarning:starlette.*",
+]
