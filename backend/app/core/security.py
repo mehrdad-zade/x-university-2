@@ -1,7 +1,29 @@
 """
-Security utilities for X University API.
-JWT token handling, password hashing, and authentication helpers.
+Security utilities for X University API
+
+This module provides comprehensive security functionality including:
+- JWT token generation, validation, and management
+- Password hashing and verification using bcrypt
+- Custom authentication error handling
+- Session ID generation for user session tracking
+
+The security implementation follows industry best practices:
+- Uses bcrypt for password hashing with proper salting
+- JWT tokens with configurable expiration times
+- Separate access and refresh token mechanisms
+- Cryptographically secure random session ID generation
+
+Security considerations:
+- All passwords are hashed using bcrypt before storage
+- JWT tokens include user ID and role information
+- Access tokens have short expiration times (30 minutes default)
+- Refresh tokens have longer expiration times (7 days default)
+- Session IDs are generated using cryptographically secure random bytes
+
+Author: X University Development Team
+Created: 2025
 """
+
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Union
@@ -15,13 +37,25 @@ from app.core.config import settings
 
 
 class AuthError(HTTPException):
-    """Custom authentication error."""
-    def __init__(self, detail: str = "Authentication failed"):
-        super().__init__(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=detail,
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    """
+    Custom authentication error exception.
+    
+    This exception is raised when authentication or authorization fails,
+    providing consistent error responses across the API.
+    
+    Inherits from FastAPI's HTTPException to integrate seamlessly with
+    the framework's error handling system.
+    """
+    
+    def __init__(self, detail: str = "Authentication failed", status_code: int = status.HTTP_401_UNAUTHORIZED):
+        """
+        Initialize authentication error.
+        
+        Args:
+            detail: Human-readable error description
+            status_code: HTTP status code (default: 401 Unauthorized)
+        """
+        super().__init__(status_code=status_code, detail=detail)
 
 
 def create_access_token(subject: Union[str, Any], expires_delta: Optional[timedelta] = None) -> str:

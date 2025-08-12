@@ -1,18 +1,61 @@
+/**
+ * Layout Component for X University Frontend
+ * 
+ * Provides the main application layout structure including navigation,
+ * header, footer, and content area for all pages.
+ * 
+ * Features:
+ * - Responsive navigation bar with authentication state
+ * - Dynamic navigation based on user authentication status
+ * - Consistent header and footer across all pages
+ * - Active route highlighting in navigation
+ * - User greeting and logout functionality
+ * - Nested routing support with React Router Outlet
+ * 
+ * Layout Structure:
+ * - Header: Logo, navigation links, user actions
+ * - Main: Page content rendered via React Router
+ * - Footer: Copyright and application information
+ * 
+ * Navigation:
+ * - Home: Always visible to all users
+ * - Monitor: System monitoring page for all users
+ * - Dashboard: Only visible when authenticated
+ * - Login: Only visible when not authenticated
+ * - Logout: Only visible when authenticated
+ * 
+ * @author X University Development Team
+ * @created 2025
+ */
+
 import { Link, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 
+/**
+ * Main Layout Component
+ * 
+ * Renders the application layout with navigation, content area, and footer.
+ * Handles authentication state and provides appropriate navigation options.
+ */
 export default function Layout() {
-  const { isAuthenticated, user, logout } = useAuth();
-  const location = useLocation();
-  const isDashboard = location.pathname === '/dashboard';
+  const location = useLocation()
+  const { user, isAuthenticated, logout } = useAuth()
+  
+  // Check if current route is dashboard page
+  const isDashboard = location.pathname === '/dashboard'
 
+  /**
+   * Handle user logout
+   * Calls the logout function from auth context and handles any errors gracefully.
+   */
   const handleLogout = async () => {
     try {
-      await logout();
+      await logout()
     } catch (error) {
-      console.error('Logout failed:', error);
+      console.error('Logout failed:', error)
+      // Continue with local logout even if server call fails
     }
-  };
+  }
 
   // Don't show the layout header/footer on dashboard page
   if (isDashboard) {

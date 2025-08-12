@@ -1,17 +1,63 @@
 """
-API router configuration.
-Combines all API endpoints under /api/v1 prefix.
+Main API Router for X University Backend
+
+This module defines the main API router that aggregates all route modules
+and provides the central entry point for API endpoints.
+
+The router includes:
+- Authentication and user management routes
+- System monitoring and health check routes  
+- Versioned API structure (/api/v1)
+- Automatic OpenAPI documentation generation
+
+Route Organization:
+- /auth/* - Authentication and user management
+- /users/* - User profile and management
+- /monitor - System monitoring endpoints
+- Additional routes will be added as features are implemented
+
+All routes are properly documented with OpenAPI schemas and include
+appropriate authentication and authorization middleware.
+
+Author: X University Development Team
+Created: 2025
 """
+
 from fastapi import APIRouter
 
+# Import route modules
 from app.api.routes import auth, users, monitor
 
-api_router = APIRouter()
+# Create the main API router with v1 prefix
+api_router = APIRouter(
+    prefix="",  # No additional prefix here since it's added in main.py
+    responses={
+        400: {"description": "Bad Request"},
+        401: {"description": "Unauthorized"},
+        403: {"description": "Forbidden"}, 
+        404: {"description": "Not Found"},
+        422: {"description": "Validation Error"},
+        500: {"description": "Internal Server Error"}
+    }
+)
 
 @api_router.get("/")
 async def api_root() -> dict[str, str]:
-    """API root endpoint."""
-    return {"message": "X University API v1"}
+    """
+    API root endpoint providing basic information.
+    
+    Returns basic API information and status. This endpoint
+    can be used to verify API availability and version.
+    
+    Returns:
+        dict: API information including version and status
+    """
+    return {
+        "message": "X University API v1",
+        "version": "0.1.0",
+        "status": "active",
+        "documentation": "/docs"
+    }
 
 # Include route modules
 api_router.include_router(

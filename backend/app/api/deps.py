@@ -1,7 +1,31 @@
 """
-Dependency injection for FastAPI routes.
-Authentication and authorization dependencies.
+FastAPI Dependency Injection for X University API
+
+This module provides dependency injection functions for FastAPI routes,
+handling authentication, authorization, and common service dependencies.
+
+Key dependencies:
+- Authentication: JWT token validation and user retrieval
+- Authorization: Role-based access control
+- Services: Database sessions and service layer instances
+- Request context: Client information and request metadata
+
+The dependency system follows FastAPI best practices:
+- Type annotations for automatic documentation
+- Async functions for non-blocking operations
+- Proper error handling with custom exceptions
+- Reusable dependencies for consistent behavior
+
+Security Model:
+- JWT Bearer token authentication
+- Role-based access control (Admin, Instructor, Student)
+- Optional authentication for public endpoints
+- Session tracking and client information logging
+
+Author: X University Development Team
+Created: 2025
 """
+
 from typing import Annotated, Optional
 
 from fastapi import Depends, HTTPException, status, Request
@@ -14,11 +38,12 @@ from app.models.auth import User, UserRole
 from app.core.security import AuthError
 
 
-# Security scheme for JWT bearer tokens
+# Security scheme for JWT Bearer token authentication
+# This will automatically add authentication to OpenAPI documentation
 security = HTTPBearer(
     scheme_name="JWT",
-    description="JWT Bearer token authentication",
-    auto_error=False
+    description="JWT Bearer token authentication. Format: 'Bearer <your-token>'",
+    auto_error=False  # Don't automatically raise errors, let us handle them
 )
 
 
