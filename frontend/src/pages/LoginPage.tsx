@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAuth } from '../lib/auth';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ApiError } from '../lib/api';
+import { UI_TEXT, getDemoCredentials } from '../constants';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -36,13 +37,11 @@ export default function LoginPage() {
   };
 
   const fillDemoCredentials = (role: 'admin' | 'instructor' | 'student') => {
-    const credentials = {
-      admin: { email: 'admin@example.com', password: 'admin123' },
-      instructor: { email: 'instructor@example.com', password: 'instructor123' },
-      student: { email: 'student@example.com', password: 'student123' },
-    };
-    setEmail(credentials[role].email);
-    setPassword(credentials[role].password);
+    const credentials = getDemoCredentials(role);
+    if (credentials) {
+      setEmail(credentials.email);
+      setPassword(credentials.password);
+    }
   };
 
   return (
@@ -55,16 +54,16 @@ export default function LoginPage() {
             </svg>
           </div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Sign in to X-University
+            {UI_TEXT.LOGIN.SIGN_IN_TITLE}
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            Access your learning dashboard
+            {UI_TEXT.LOGIN.ACCESS_DASHBOARD}
           </p>
         </div>
 
         {/* Demo Credentials */}
         <div className="rounded-md bg-blue-50 p-4">
-          <h3 className="text-sm font-medium text-blue-800 mb-3">Demo Accounts:</h3>
+          <h3 className="text-sm font-medium text-blue-800 mb-3">{UI_TEXT.LOGIN.DEMO_ACCOUNTS}</h3>
           <div className="grid grid-cols-3 gap-2">
             <button
               type="button"
@@ -100,7 +99,7 @@ export default function LoginPage() {
           <div className="rounded-md shadow-sm -space-y-px">
             <div>
               <label htmlFor="email-address" className="sr-only">
-                Email address
+                {UI_TEXT.FORMS.EMAIL}
               </label>
               <input
                 id="email-address"
@@ -111,13 +110,13 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Email address"
+                placeholder={UI_TEXT.FORMS.EMAIL}
                 disabled={isLoading}
               />
             </div>
             <div>
               <label htmlFor="password" className="sr-only">
-                Password
+                {UI_TEXT.FORMS.PASSWORD}
               </label>
               <input
                 id="password"
@@ -128,7 +127,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Password"
+                placeholder={UI_TEXT.FORMS.PASSWORD}
                 disabled={isLoading}
               />
             </div>
@@ -146,10 +145,10 @@ export default function LoginPage() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
-                  Signing in...
+                  {UI_TEXT.LOGIN.SIGNING_IN}
                 </>
               ) : (
-                'Sign in'
+                UI_TEXT.LOGIN.SIGN_IN
               )}
             </button>
           </div>
@@ -157,7 +156,7 @@ export default function LoginPage() {
 
         <div className="text-center">
           <p className="text-xs text-gray-600">
-            This is a demo application. Click the demo account buttons above to quickly sign in.
+            {UI_TEXT.LOGIN.DEMO_NOTE}
           </p>
         </div>
       </div>

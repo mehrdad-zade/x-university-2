@@ -20,6 +20,7 @@
  * Navigation:
  * - Home: Always visible to all users
  * - Monitor: System monitoring page for all users
+ * - API Doc: Link to backend API documentation (external)
  * - Dashboard: Only visible when authenticated
  * - Login: Only visible when not authenticated
  * - Logout: Only visible when authenticated
@@ -97,6 +98,15 @@ export default function Layout() {
               >
                 Monitor
               </Link>
+              
+              <a
+                href="http://localhost:8000/docs"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3 py-2 rounded-md text-sm font-medium transition-colors text-gray-700 hover:text-gray-900 hover:bg-gray-50"
+              >
+                API Doc
+              </a>
               
               {isAuthenticated ? (
                 <>

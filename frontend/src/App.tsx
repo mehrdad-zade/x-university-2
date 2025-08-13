@@ -32,6 +32,7 @@ import Layout from './components/Layout'
 import HomePage from './pages/HomePage'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
+import MonitorPage from './pages/MonitorPage'
 
 /**
  * App Component
@@ -46,6 +47,9 @@ function App() {
         <Route path="/" element={<Layout />}>
           {/* Public home page - accessible to all users */}
           <Route index element={<HomePage />} />
+          
+          {/* Public monitor page - accessible to all users */}
+          <Route path="/monitor" element={<MonitorPage />} />
           
           {/* Public login page - only accessible when not authenticated */}
           <Route path="/login" element={
