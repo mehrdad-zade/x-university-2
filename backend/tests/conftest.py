@@ -8,16 +8,19 @@ import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.pool import NullPool
+import sys
+from pathlib import Path
 
 from app.main import app
 from app.core.config import settings
 from app.db.base import Base, get_db_session
 from app.models.auth import User, UserRole
 from app.core.security import hash_password
+from constants import DevCredentials, Database
 
 
 # Test database URL - use separate test database
-TEST_DATABASE_URL = settings.DATABASE_URL.replace("/xu2", "/xu2_test")
+TEST_DATABASE_URL = settings.DATABASE_URL.replace(f"/{Database.NAME}", f"/{Database.TEST_NAME}")
 
 # Create test engine
 test_engine = create_async_engine(
@@ -73,7 +76,7 @@ async def sample_user(db_session: AsyncSession) -> User:
     """Create a sample user for testing."""
     user = User(
         email="test@example.com",
-        password_hash=hash_password("password123"),
+        password_hash=hash_password(DevCredentials.PASSWORD),
         full_name="Test User",
         role=UserRole.STUDENT,
         is_active=True,
@@ -91,8 +94,8 @@ async def sample_user(db_session: AsyncSession) -> User:
 async def admin_user(db_session: AsyncSession) -> User:
     """Create an admin user for testing."""
     user = User(
-        email="admin@example.com",
-        password_hash=hash_password("admin123"),
+        email=DevCredentials.ADMIN_EMAIL,
+        password_hash=hash_password(DevCredentials.PASSWORD),
         full_name="Admin User",
         role=UserRole.ADMIN,
         is_active=True,
@@ -110,8 +113,8 @@ async def admin_user(db_session: AsyncSession) -> User:
 async def instructor_user(db_session: AsyncSession) -> User:
     """Create an instructor user for testing."""
     user = User(
-        email="instructor@example.com",
-        password_hash=hash_password("instructor123"),
+        email=DevCredentials.INSTRUCTOR_EMAIL,
+        password_hash=hash_password(DevCredentials.PASSWORD),
         full_name="Instructor User",
         role=UserRole.INSTRUCTOR,
         is_active=True,
@@ -130,8 +133,8 @@ async def auth_headers_student(client: AsyncClient) -> dict[str, str]:
     """Get authentication headers for a student user."""
     # Register and login a student user
     register_data = {
-        "email": "student@example.com",
-        "password": "password123",
+        "email": DevCredentials.STUDENT_EMAIL,
+        "password": DevCredentials.PASSWORD,
         "full_name": "Test Student",
         "role": "student"
     }
@@ -140,8 +143,8 @@ async def auth_headers_student(client: AsyncClient) -> dict[str, str]:
     assert register_response.status_code == 201
     
     login_data = {
-        "email": "student@example.com",
-        "password": "password123"
+        "email": DevCredentials.STUDENT_EMAIL,
+        "password": DevCredentials.PASSWORD
     }
     
     login_response = await client.post("/api/v1/auth/login", json=login_data)
@@ -157,7 +160,7 @@ async def auth_headers_admin(client: AsyncClient) -> dict[str, str]:
     # Register and login an admin user
     register_data = {
         "email": "testadmin@example.com",
-        "password": "admin123",
+        "password": DevCredentials.PASSWORD,
         "full_name": "Test Admin",
         "role": "admin"
     }
@@ -167,7 +170,7 @@ async def auth_headers_admin(client: AsyncClient) -> dict[str, str]:
     
     login_data = {
         "email": "testadmin@example.com",
-        "password": "admin123"
+        "password": DevCredentials.PASSWORD
     }
     
     login_response = await client.post("/api/v1/auth/login", json=login_data)

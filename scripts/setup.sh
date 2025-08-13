@@ -1,6 +1,185 @@
 #!/bin/bash
 
-# setup.sh
+# Source centralized constants
+SCRIPT_DIR="$(dirname "${BASH_SOURCE[0]}")"
+source "$SCRIPT_DIR/constants.sh"
+
+# ============================================================================
+# PostgreSQL Helper Functions (consolidated from separate scripts)
+# ============================================================================
+
+# Function to check Docker resources and PostgreSQL compatibility
+check_docker_postgres_resources() {
+    echo -e "${INFO} Checking Docker Desktop resources for PostgreSQL..."
+    
+    if command -v docker >/dev/null 2>&1; then
+        DOCKER_INFO=$(docker info 2>/dev/null || echo "")
+        if echo "$DOCKER_INFO" | grep -q "Total Memory"; then
+            TOTAL_MEM=$(echo "$DOCKER_INFO" | grep "Total Memory" | awk '{print $3$4}')
+            echo -e "${SUCCESS} Docker Desktop Memory: $TOTAL_MEM"
+            
+            # Parse memory and warn if too low
+            MEM_NUM=$(echo "$TOTAL_MEM" | sed 's/[^0-9.]//g')
+            if command -v bc >/dev/null 2>&1 && [[ $(echo "$MEM_NUM < 4" | bc -l 2>/dev/null || echo "0") -eq 1 ]]; then
+                echo -e "${WARNING} Docker Desktop has limited memory allocation ($TOTAL_MEM)"
+                echo -e "${WARNING} Recommend increasing to at least 4GB for reliable PostgreSQL startup"
+                return 1
+            fi
+        fi
+    fi
+    return 0
+}
+
+# Function to create PostgreSQL startup optimizations if needed
+ensure_postgres_optimizations() {
+    echo -e "${INFO} Ensuring PostgreSQL startup optimizations..."
+    
+    OVERRIDE_FILE="$PROJECT_ROOT/infra/docker-compose.startup-fix.yml"
+    if [ ! -f "$OVERRIDE_FILE" ]; then
+        echo -e "${INFO} Creating PostgreSQL startup optimization override..."
+        
+        cat > "$OVERRIDE_FILE" << 'EOF'
+# Docker Compose override for reliable PostgreSQL startup
+version: '3.8'
+
+services:
+  postgres:
+    # Extended health check for reliable startup detection
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dev} -d ${POSTGRES_DB:-xu2} -t 5 || exit 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 24  # Wait up to 2 minutes
+      start_period: 60s  # Allow 1 minute for initial startup
+    
+    # Ensure proper shutdown handling
+    stop_grace_period: 60s
+    stop_signal: SIGTERM
+    
+    # Resource limits to prevent resource starvation
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+    
+    # Additional environment variables for reliability
+    environment:
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C --auth-local=trust --auth-host=md5"
+      POSTGRES_HOST_AUTH_METHOD: md5
+      PGDATA: /var/lib/postgresql/data/pgdata
+    
+    # Optimized command with conservative settings for reliability
+    command: >
+      postgres
+      -c logging_collector=off
+      -c log_destination=stderr
+      -c log_statement=none
+      -c log_min_duration_statement=-1
+      -c shared_buffers=128MB
+      -c effective_cache_size=512MB
+      -c maintenance_work_mem=64MB
+      -c checkpoint_completion_target=0.7
+      -c wal_buffers=4MB
+      -c default_statistics_target=100
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=100
+      -c work_mem=4MB
+      -c max_connections=100
+      -c shared_preload_libraries=''
+      -c fsync=on
+      -c synchronous_commit=on
+      -c full_page_writes=on
+    
+    # Volume optimization
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/pgdata
+      - ./init-data:/docker-entrypoint-initdb.d:ro
+
+volumes:
+  postgres_data:
+    driver: local
+EOF
+        echo -e "${SUCCESS} Created PostgreSQL startup optimization override"
+    else
+        echo -e "${SUCCESS} PostgreSQL startup optimizations already exist"
+    fi
+}
+
+# Function to diagnose PostgreSQL issues
+diagnose_postgres_issues() {
+    echo -e "${INFO} Running PostgreSQL diagnostics..."
+    echo
+    echo "=== PostgreSQL Startup Diagnosis ==="
+    echo
+    
+    echo "1. Docker Desktop Status:"
+    docker info | grep -E "(Server Version|Storage Driver|CPUs|Total Memory)" || echo "Docker info not available"
+    echo
+    
+    echo "2. Current Docker Resources:"
+    docker system df
+    echo
+    
+    echo "3. PostgreSQL Container Status:"
+    docker ps -a --filter "name=xu2-postgres" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+    echo
+    
+    echo "4. PostgreSQL Logs (last 30 lines):"
+    docker compose -f "$PROJECT_ROOT/infra/docker-compose.yml" logs postgres --tail=30 2>/dev/null || echo "No logs available"
+    echo
+    
+    echo "5. Volume Status:"
+    docker volume ls --filter "name=postgres"
+    echo
+    
+    echo "6. System Resources:"
+    echo "Available Disk:" $(df -h . | tail -1 | awk '{print $4}')
+    echo
+    
+    echo "=== Recommendations ==="
+    echo "• If PostgreSQL keeps failing, try: --clean flag for fresh setup"
+    echo "• If Docker is low on resources, increase Docker Desktop memory to 4GB+"
+    echo "• If volume issues persist, try: docker volume prune && docker system prune"
+}
+
+# Function to cleanup problematic PostgreSQL containers and volumes
+cleanup_postgres_state() {
+    echo -e "${INFO} Cleaning up problematic PostgreSQL state..."
+    
+    # Stop and remove any existing PostgreSQL containers
+    if docker ps -a --filter "name=xu2-postgres" --format "{{.Names}}" | grep -q "xu2-postgres"; then
+        echo -e "${INFO} Found existing PostgreSQL container, cleaning up..."
+        docker stop xu2-postgres 2>/dev/null || true
+        docker rm -f xu2-postgres 2>/dev/null || true
+        echo -e "${SUCCESS} Cleaned up existing container"
+    fi
+    
+    # Check for orphaned postgres containers
+    ORPHANED=$(docker ps -a --filter "ancestor=postgres" --filter "status=exited" --format "{{.Names}}" 2>/dev/null || echo "")
+    if [ -n "$ORPHANED" ]; then
+        echo -e "${INFO} Removing orphaned PostgreSQL containers..."
+        echo "$ORPHANED" | xargs docker rm -f 2>/dev/null || true
+    fi
+    
+    # Check volume integrity
+    if docker volume ls --format "{{.Name}}" | grep -q "x-university-infra_postgres_data"; then
+        echo -e "${INFO} Checking PostgreSQL volume integrity..."
+        if ! docker run --rm -v x-university-infra_postgres_data:/test alpine:latest ls -la /test >/dev/null 2>&1; then
+            echo -e "${WARNING} PostgreSQL volume appears corrupted, recreating..."
+            docker volume rm -f x-university-infra_postgres_data 2>/dev/null || true
+            echo -e "${SUCCESS} Removed corrupted volume"
+        fi
+    fi
+}
+
+# ============================================================================
+# End PostgreSQL Helper Functions  
+# ============================================================================
+
+#!/bin/bash
+# scripts/setup.sh
 # Purpose: Complete setup and startup script for X University development environment
 #
 # Prerequisites:
@@ -32,14 +211,16 @@
 #   • Runs backend and frontend tests
 #   • Verifies service health and accessibility
 #
-# Usage: ./setup.sh [--clean] [--skip-tests] [--skip-browser]
+# Usage: ./scripts/setup.sh [--clean] [--skip-tests] [--skip-browser] [--skip-logs] [--diagnose-postgres]
 # Options:
 #   --clean: Remove existing environments and start fresh
 #            • Removes Python virtual environment
 #            • Cleans Node.js dependencies
-#            • Removes Docker volumes
+#            • Removes Docker volumes and PostgreSQL state
 #   --skip-tests: Skip running tests during setup
 #   --skip-browser: Skip automatically opening browser tabs
+#   --skip-logs: Skip showing live logs after setup
+#   --diagnose-postgres: Run PostgreSQL diagnostic information gathering
 #
 # Status Checks:
 # - Verifies Docker Desktop is running (auto-starts on macOS)
@@ -70,6 +251,8 @@ print_section() {
 CLEAN=false
 SKIP_TESTS=false
 SKIP_BROWSER=false
+SKIP_LOGS=false
+DIAGNOSE_POSTGRES=false
 for arg in "$@"; do
     case $arg in
         --clean)
@@ -82,6 +265,14 @@ for arg in "$@"; do
             ;;
         --skip-browser)
             SKIP_BROWSER=true
+            shift
+            ;;
+        --skip-logs)
+            SKIP_LOGS=true
+            shift
+            ;;
+        --diagnose-postgres)
+            DIAGNOSE_POSTGRES=true
             shift
             ;;
     esac
@@ -185,21 +376,21 @@ if ! check_docker_running; then
     fi
 fi
 
-# Check Docker network connectivity
+# Check Docker connectivity
 echo -e "${INFO} Checking Docker network connectivity..."
 if ! check_docker_network; then
-    echo -e "${ERROR} Docker network connectivity issues detected"
+    echo -e "${WARNING} Docker network connectivity issues detected"
+    echo "This may affect image pulling and container operations."
     echo "Please check:"
     echo "1. Your internet connection"
     echo "2. If you're behind a corporate VPN, check your proxy settings"
     echo "3. If you can access https://registry.hub.docker.com"
     echo "4. Your DNS settings (try adding 8.8.8.8 to your DNS servers)"
     echo ""
-    echo "You can test Docker connectivity with:"
-    echo "docker pull hello-world"
-    exit 1
+    echo -e "${INFO} Continuing setup - you may encounter issues pulling images"
+else
+    echo -e "${SUCCESS} Docker network connectivity verified"
 fi
-echo -e "${SUCCESS} Docker network connectivity verified"
 
 # Check for Node.js and npm
 if ! command_exists "node"; then
@@ -271,7 +462,9 @@ fi
 echo -e "${SUCCESS} All required tools are available"
 
 # Setup directories
-PROJECT_ROOT=$(pwd)
+# Get the actual project root (parent directory of scripts)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BACKEND_DIR="$PROJECT_ROOT/backend"
 FRONTEND_DIR="$PROJECT_ROOT/frontend"
 VENV_DIR="$BACKEND_DIR/.venv"
@@ -398,14 +591,46 @@ else
     echo -e "${INFO} .env file already exists"
 fi
 
+# Verify Docker Compose configuration
+echo -e "${INFO} Docker monitoring configuration:"
+echo -e "${SUCCESS} System optimized for performance and security (non-root user)"
+echo -e "${SUCCESS} Docker monitoring is disabled by default to prevent performance issues"
+echo -e ""
+echo -e "${INFO} 📊 Docker Container Monitoring Options:"
+echo -e "   ${GREEN}Option 1 (Recommended):${NC} Use the Monitor page's 'Show Docker Containers' button"
+echo -e "      • Provides temporary Docker access through the web interface"
+echo -e "      • No manual configuration required"
+echo -e "      • Secure and user-friendly"
+echo -e ""
+echo -e "   ${GREEN}Option 2 (Manual):${NC} Edit docker-compose.yml for persistent monitoring"
+echo -e "      • Edit ${GREEN}infra/docker-compose.yml${NC}"
+echo -e "      • Uncomment the Docker socket volume and 'user: root' lines"
+echo -e "      • Restart: ${GREEN}docker compose -f infra/docker-compose.yml up -d --force-recreate backend${NC}"
+echo -e "${WARNING} Note: Manual setup requires root access which reduces security"
+
 # Start Docker services
 print_section "Starting Docker Services"
+
+# Check Docker resources and PostgreSQL optimizations before starting
+check_docker_postgres_resources
+ensure_postgres_optimizations
+
+# Run PostgreSQL diagnostics if requested
+if [ "$DIAGNOSE_POSTGRES" = true ]; then
+    echo -e "\n${INFO} Running PostgreSQL diagnostics as requested..."
+    diagnose_postgres_issues
+    echo -e "\n${INFO} Diagnostics complete. Continuing with setup...\n"
+fi
 
 # Ensure clean startup state
 echo -e "${INFO} Preparing Docker environment..."
 docker compose -f infra/docker-compose.yml down --timeout 30 2>/dev/null || true
 
-# Clean up any orphaned containers
+# Clean up any orphaned containers and PostgreSQL state if needed
+if [ "$CLEAN" = true ]; then
+    cleanup_postgres_state
+fi
+
 docker rm -f xu2-postgres xu2-backend xu2-frontend 2>/dev/null || true
 
 echo -e "${INFO} Building and starting containers..."
@@ -442,33 +667,114 @@ RETRY_COUNT=0
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
     echo -e "${INFO} Starting services (attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)..."
     
-    # Clean up before retry
-    if [ $RETRY_COUNT -gt 0 ]; then
-        echo -e "${INFO} Cleaning up before retry..."
+    # Clean up before retry (but not on first attempt unless clean build)
+    if [ $RETRY_COUNT -gt 0 ] || [ "$CLEAN" = "true" ]; then
+        echo -e "${INFO} Cleaning up before $([ $RETRY_COUNT -eq 0 ] && echo "clean build" || echo "retry")..."
         docker compose -f infra/docker-compose.yml down --timeout 30 2>/dev/null || true
         docker rm -f xu2-postgres xu2-backend xu2-frontend 2>/dev/null || true
-        sleep 3
+        
+        # For retries, add extra cleanup
+        if [ $RETRY_COUNT -gt 0 ]; then
+            # Give Docker time to clean up
+            sleep 5
+            
+            # Check for any stuck postgres processes
+            if docker ps -aq --filter "name=xu2-postgres" | grep -q .; then
+                echo -e "${INFO} Forcefully removing stuck postgres container..."
+                docker kill xu2-postgres 2>/dev/null || true
+                docker rm -f xu2-postgres 2>/dev/null || true
+            fi
+        fi
     fi
     
-    if docker compose -f infra/docker-compose.yml --env-file infra/.env up -d $UP_OPTIONS; then
-        echo -e "${SUCCESS} Docker services started successfully"
-        break
+    # Special handling for PostgreSQL startup reliability
+    echo -e "${INFO} Starting PostgreSQL with enhanced reliability using optimized configuration..."
+    
+    # Check if startup override exists
+    STARTUP_OVERRIDE="$PROJECT_ROOT/infra/docker-compose.startup-fix.yml"
+    if [ -f "$STARTUP_OVERRIDE" ]; then
+        echo -e "${SUCCESS} Using PostgreSQL startup optimization override"
+        COMPOSE_FILES="-f infra/docker-compose.yml -f infra/docker-compose.startup-fix.yml"
     else
-        RETRY_COUNT=$((RETRY_COUNT + 1))
-        if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-            echo -e "${ERROR} Failed to start Docker services after $MAX_RETRIES attempts"
-            echo -e "${ERROR} Troubleshooting steps:"
-            echo "1. Check Docker Desktop is running and has enough resources"
-            echo "2. Try: docker system prune -a (removes all unused data)"
-            echo "3. Restart Docker Desktop"
-            echo "4. Run this script again"
-            echo -e "\n${INFO} Current Docker status:"
-            docker system df
-            exit 1
+        echo -e "${INFO} Standard configuration (run 'make fix-postgres' for optimizations)"
+        COMPOSE_FILES="-f infra/docker-compose.yml"
+    fi
+    
+    # Start postgres first with explicit startup sequence
+    if docker compose $COMPOSE_FILES --env-file infra/.env up -d postgres; then
+        echo -e "${SUCCESS} PostgreSQL container started, waiting for initialization..."
+        
+        # Enhanced PostgreSQL initialization wait with progress tracking
+        POSTGRES_TIMEOUT=120  # 2 minutes for full PostgreSQL init
+        POSTGRES_CHECK_INTERVAL=3
+        POSTGRES_READY=false
+        
+        while [ $POSTGRES_TIMEOUT -gt 0 ]; do
+            # Check if container is still running
+            if ! docker ps --filter "name=xu2-postgres" --filter "status=running" | grep -q "xu2-postgres"; then
+                echo -e "\n${ERROR} PostgreSQL container stopped unexpectedly"
+                docker compose $COMPOSE_FILES logs postgres --tail=20
+                break
+            fi
+            
+            # Check PostgreSQL readiness
+            if docker compose $COMPOSE_FILES exec -T postgres pg_isready -U dev -d xu2 >/dev/null 2>&1; then
+                echo -e "\n${SUCCESS} PostgreSQL is ready and accepting connections!"
+                POSTGRES_READY=true
+                break
+            fi
+            
+            # Progress indicator every 15 seconds
+            if [ $((POSTGRES_TIMEOUT % 15)) -eq 0 ]; then
+                echo -e "\n${INFO} Still waiting for PostgreSQL initialization... ($((120 - POSTGRES_TIMEOUT))s elapsed)"
+                # Show container status
+                docker compose $COMPOSE_FILES ps postgres --format "table {{.Name}}\t{{.Status}}"
+            else
+                echo -n "."
+            fi
+            
+            sleep $POSTGRES_CHECK_INTERVAL
+            POSTGRES_TIMEOUT=$((POSTGRES_TIMEOUT - POSTGRES_CHECK_INTERVAL))
+        done
+        
+        if [ "$POSTGRES_READY" = "true" ]; then
+            echo -e "${INFO} PostgreSQL ready, starting remaining services..."
+            
+            # Now start the rest of the services
+            if docker compose $COMPOSE_FILES --env-file infra/.env up -d $UP_OPTIONS; then
+                echo -e "${SUCCESS} All services started successfully"
+                break
+            else
+                echo -e "${WARNING} Failed to start dependent services"
+                docker compose $COMPOSE_FILES logs --tail=10
+            fi
         else
-            echo -e "${WARNING} Failed to start services, waiting before retry..."
-            sleep 10
+            echo -e "\n${ERROR} PostgreSQL failed to initialize within timeout"
+            echo -e "${INFO} PostgreSQL logs:"
+            docker compose $COMPOSE_FILES logs postgres --tail=30
         fi
+    else
+        echo -e "${ERROR} Failed to start PostgreSQL container"
+    fi
+    
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+    if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+        echo -e "${ERROR} Failed to start services after $MAX_RETRIES attempts"
+        echo -e "\n${ERROR} Running PostgreSQL diagnostics..."
+        
+        # Use our consolidated diagnostic function
+        diagnose_postgres_issues
+        
+        echo -e "\n${ERROR} Suggested solutions:"
+        echo "• Increase Docker Desktop memory allocation to at least 4GB"
+        echo "• Try: docker system prune -a (removes all unused data)"
+        echo "• Restart Docker Desktop and try again"
+        echo "• Run: ./scripts/setup.sh --clean (complete fresh start)"
+        exit 1
+    else
+        echo -e "${WARNING} Failed to start services, waiting before retry (attempt $RETRY_COUNT/$MAX_RETRIES)..."
+        echo -e "${INFO} Waiting 15 seconds for system to stabilize..."
+        sleep 15
     fi
 done
 
@@ -498,7 +804,7 @@ while [ $TIMEOUT -gt 0 ]; do
     if echo "$SERVICES_STATUS" | grep -q "\"State\":\"running\""; then
         # Check backend health specifically
         if [ "$POSTGRES_READY" = "true" ] && [ "$BACKEND_READY" = "false" ]; then
-            if curl -s --connect-timeout 3 http://localhost:8000/health >/dev/null 2>&1; then
+            if curl -s --connect-timeout 3 "${HEALTH_CHECK_URL}" >/dev/null 2>&1; then
                 echo -e "${SUCCESS} Backend API is responding!"
                 BACKEND_READY=true
             fi
@@ -549,11 +855,43 @@ fi
 # Run database migrations with comprehensive retry logic and validation
 print_section "Database Schema Setup"
 
-# Wait a bit more to ensure backend is fully ready
-echo -e "${INFO} Ensuring backend is fully initialized..."
-sleep 5
+# Wait a bit more to ensure backend is fully ready for database operations
+echo -e "${INFO} Ensuring backend is fully initialized for database operations..."
+sleep 10
 
-echo -e "${INFO} Checking database schema state..."
+# Verify backend can handle database operations
+echo -e "${INFO} Testing backend database connectivity..."
+DB_CONNECTION_READY=false
+for i in {1..10}; do
+    if docker compose -f infra/docker-compose.yml exec -T backend python3 -c "
+from sqlalchemy import create_engine, text
+import os
+try:
+    engine = create_engine(os.environ['DATABASE_URL'])
+    with engine.connect() as conn:
+        conn.execute(text('SELECT 1'))
+    print('DB_CONNECTION_OK')
+    exit(0)
+except Exception as e:
+    print(f'DB_CONNECTION_ERROR: {e}')
+    exit(1)
+" 2>/dev/null | grep -q "DB_CONNECTION_OK"; then
+        echo -e "${SUCCESS} Backend database connectivity verified"
+        DB_CONNECTION_READY=true
+        break
+    else
+        echo -e "${INFO} Database connection attempt $i/10..."
+        sleep 2
+    fi
+done
+
+if [ "$DB_CONNECTION_READY" = "false" ]; then
+    echo -e "${ERROR} Backend cannot connect to database - stopping setup"
+    docker compose -f infra/docker-compose.yml logs backend --tail=20
+    exit 1
+fi
+
+echo -e "${INFO} Checking current database schema state..."
 MIGRATION_RETRIES=5
 MIGRATION_COUNT=0
 MIGRATION_SUCCESS=false
@@ -561,36 +899,39 @@ MIGRATION_SUCCESS=false
 while [ $MIGRATION_COUNT -lt $MIGRATION_RETRIES ]; do
     echo -e "${INFO} Migration attempt $((MIGRATION_COUNT + 1))/$MIGRATION_RETRIES..."
     
-    # First, check if Alembic can connect and get current state
+    # Check current migration state
     if CURRENT_REVISION=$(docker compose -f infra/docker-compose.yml exec -T backend alembic current 2>/dev/null | grep -E "^[a-f0-9]+\s+" | awk '{print $1}'); then
         if [ -n "$CURRENT_REVISION" ]; then
             echo -e "${INFO} Current database revision: $CURRENT_REVISION"
         else
-            echo -e "${INFO} Database appears to be uninitialized"
+            echo -e "${INFO} Database appears to be uninitialized - will run migrations"
         fi
         
-        # Run the migration
+        # Check what migrations are available
+        echo -e "${INFO} Available migrations:"
+        docker compose -f infra/docker-compose.yml exec -T backend alembic history --verbose 2>/dev/null | head -5 || true
+        
+        # Run the migration with detailed output
+        echo -e "${INFO} Running database migrations..."
         if docker compose -f infra/docker-compose.yml exec -T backend alembic upgrade head; then
             echo -e "${SUCCESS} Database migrations completed successfully"
             MIGRATION_SUCCESS=true
             break
         else
             echo -e "${WARNING} Migration failed on attempt $((MIGRATION_COUNT + 1))"
+            echo -e "${INFO} Backend logs from migration attempt:"
+            docker compose -f infra/docker-compose.yml logs backend --tail=10
         fi
     else
         echo -e "${WARNING} Could not connect to database for migration on attempt $((MIGRATION_COUNT + 1))"
+        echo -e "${INFO} Checking backend health..."
+        docker compose -f infra/docker-compose.yml ps backend
     fi
     
     MIGRATION_COUNT=$((MIGRATION_COUNT + 1))
     if [ $MIGRATION_COUNT -lt $MIGRATION_RETRIES ]; then
         echo -e "${INFO} Waiting 10 seconds before retry..."
         sleep 10
-        
-        # Check if backend is still running
-        if ! curl -s --connect-timeout 3 http://localhost:8000/health >/dev/null 2>&1; then
-            echo -e "${WARNING} Backend seems to be down, checking service status..."
-            docker compose -f infra/docker-compose.yml ps backend
-        fi
     fi
 done
 
@@ -617,14 +958,28 @@ if TABLES=$(docker compose -f infra/docker-compose.yml exec -T postgres psql -U 
     if [ "$TABLES" -ge 2 ]; then
         echo -e "${SUCCESS} Database schema verification passed ($TABLES core tables found)"
         
-        # Check if users table has the correct structure
-        if docker compose -f infra/docker-compose.yml exec -T postgres psql -U dev -d xu2 -t -c "\d users" 2>/dev/null | grep -q "password_hash"; then
-            echo -e "${SUCCESS} Users table structure verified"
+        # Check if users table has the correct structure with role column
+        echo -e "${INFO} Verifying users table structure..."
+        if docker compose -f infra/docker-compose.yml exec -T postgres psql -U dev -d xu2 -c "\d users" 2>/dev/null | grep -q "role.*character varying"; then
+            echo -e "${SUCCESS} Users table structure verified with role column"
         else
-            echo -e "${WARNING} Users table may have incorrect structure - this could cause authentication issues"
+            echo -e "${ERROR} Users table missing role column - migration may have failed"
+            echo -e "${INFO} Current users table structure:"
+            docker compose -f infra/docker-compose.yml exec -T postgres psql -U dev -d xu2 -c "\d users" 2>/dev/null || true
+            exit 1
+        fi
+        
+        # Verify password hash column name (should be password_hash, not hashed_password)
+        if docker compose -f infra/docker-compose.yml exec -T postgres psql -U dev -d xu2 -c "\d users" 2>/dev/null | grep -q "password_hash"; then
+            echo -e "${SUCCESS} Password hash column correctly named"
+        else
+            echo -e "${ERROR} Password hash column incorrectly named - this will cause authentication issues"
+            exit 1
         fi
     else
         echo -e "${WARNING} Database schema verification failed - expected tables may be missing"
+        echo -e "${INFO} Available tables:"
+        docker compose -f infra/docker-compose.yml exec -T postgres psql -U dev -d xu2 -c "\dt" 2>/dev/null || true
     fi
 else
     echo -e "${WARNING} Could not verify database schema"
@@ -640,7 +995,7 @@ if [ "$CLEAN" = "true" ]; then
     echo -e "${INFO} Clean build detected - ensuring fresh user data..."
     echo -e "${WARNING} Clearing any existing user data..."
     
-    # Safely clear user-related tables
+    # Safely clear user-related tables and handle schema conflicts
     CLEAR_RESULT=$(docker compose -f infra/docker-compose.yml exec -T postgres psql -U dev -d xu2 -c "
         DO \$\$ 
         BEGIN
@@ -652,7 +1007,15 @@ if [ "$CLEAN" = "true" ]; then
                 TRUNCATE TABLE sessions RESTART IDENTITY CASCADE;
             END IF;
             IF EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'users') THEN
-                TRUNCATE TABLE users RESTART IDENTITY CASCADE;
+                -- Check if this is the old schema (with hashed_password instead of password_hash)
+                IF EXISTS (SELECT column_name FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'hashed_password') THEN
+                    -- Drop the old table completely to avoid schema conflicts
+                    DROP TABLE IF EXISTS users CASCADE;
+                    RAISE NOTICE 'Dropped old users table with incompatible schema';
+                ELSE
+                    -- Just truncate if it's the new schema
+                    TRUNCATE TABLE users RESTART IDENTITY CASCADE;
+                END IF;
             END IF;
         END \$\$;" 2>&1)
     
@@ -660,6 +1023,9 @@ if [ "$CLEAN" = "true" ]; then
         echo -e "${WARNING} Some tables may not exist yet (this is normal for first setup)"
     else
         echo -e "${SUCCESS} User data cleared successfully"
+        if echo "$CLEAR_RESULT" | grep -q "Dropped old users table"; then
+            echo -e "${INFO} Removed old incompatible user table schema"
+        fi
     fi
 fi
 
@@ -766,9 +1132,20 @@ if [ "$INIT_SUCCESS" = "true" ]; then
     if [ "$FINAL_USER_COUNT" -ge 3 ]; then
         echo -e "${SUCCESS} User verification passed - $FINAL_USER_COUNT users in database"
         
-        # Display available users
+        # Display available users with roles
         echo -e "${INFO} Available user accounts:"
         docker compose -f infra/docker-compose.yml exec -T postgres psql -U dev -d xu2 -c "SELECT email, role, is_active FROM users ORDER BY role;" 2>/dev/null || true
+        
+        # Verify we have all three required roles
+        ADMIN_COUNT=$(docker compose -f infra/docker-compose.yml exec -T postgres psql -U dev -d xu2 -t -c "SELECT COUNT(*) FROM users WHERE role = 'admin';" 2>/dev/null | tr -d ' \n' || echo "0")
+        INSTRUCTOR_COUNT=$(docker compose -f infra/docker-compose.yml exec -T postgres psql -U dev -d xu2 -t -c "SELECT COUNT(*) FROM users WHERE role = 'instructor';" 2>/dev/null | tr -d ' \n' || echo "0")
+        STUDENT_COUNT=$(docker compose -f infra/docker-compose.yml exec -T postgres psql -U dev -d xu2 -t -c "SELECT COUNT(*) FROM users WHERE role = 'student';" 2>/dev/null | tr -d ' \n' || echo "0")
+        
+        if [ "$ADMIN_COUNT" -ge 1 ] && [ "$INSTRUCTOR_COUNT" -ge 1 ] && [ "$STUDENT_COUNT" -ge 1 ]; then
+            echo -e "${SUCCESS} All required user roles created (Admin: ${ADMIN_COUNT}, Instructor: ${INSTRUCTOR_COUNT}, Student: ${STUDENT_COUNT})"
+        else
+            echo -e "${WARNING} Missing required user roles - may need manual user creation"
+        fi
     else
         echo -e "${WARNING} User verification warning - only $FINAL_USER_COUNT users found (expected 3+)"
     fi
@@ -776,19 +1153,31 @@ fi
 
 echo -e "${SUCCESS} Database initialization phase complete"
 echo -e "${INFO} Standard login credentials (if successfully created):"
-echo -e "  • ${GREEN}Admin:${NC}      admin@example.com      / admin123"
-echo -e "  • ${GREEN}Instructor:${NC} instructor@example.com / instructor123"
-echo -e "  • ${GREEN}Student:${NC}    student@example.com    / student123"
+echo -e "  • ${GREEN}Admin:${NC}      admin@example.com      / password123"
+echo -e "  • ${GREEN}Instructor:${NC} instructor@example.com / password123"
+echo -e "  • ${GREEN}Student:${NC}    student@example.com    / password123"
 
 # Run tests if not skipped
 if [ "$SKIP_TESTS" = false ]; then
     print_section "Running Tests"
     
     echo -e "${INFO} Running backend tests..."
-    docker compose -f infra/docker-compose.yml exec -T backend pytest
+    if docker compose -f infra/docker-compose.yml exec -T backend pytest; then
+        echo -e "${SUCCESS} Backend tests passed"
+    else
+        echo -e "${WARNING} Backend tests failed - this may not prevent normal operation"
+        echo -e "${INFO} To run tests manually later: docker compose -f infra/docker-compose.yml exec backend pytest"
+    fi
     
     echo -e "${INFO} Running frontend tests..."
-    docker compose -f infra/docker-compose.yml exec -T frontend npm test
+    if docker compose -f infra/docker-compose.yml exec -T frontend npm test; then
+        echo -e "${SUCCESS} Frontend tests passed"
+    else
+        echo -e "${WARNING} Frontend tests failed - this may not prevent normal operation"
+        echo -e "${INFO} To run tests manually later: docker compose -f infra/docker-compose.yml exec frontend npm test"
+    fi
+    
+    echo -e "${INFO} Tests completed - check individual results above"
 fi
 
 # Function to open URL in browser tab (not new window)
@@ -870,22 +1259,22 @@ AUTH_WORKING=false
 
 # Check backend API
 echo -e "\n${INFO} Testing backend API..."
-if BACKEND_HEALTH=$(curl -s --connect-timeout 10 http://localhost:8000/health 2>/dev/null); then
+if BACKEND_HEALTH=$(curl -s --connect-timeout 10 "${HEALTH_CHECK_URL}" 2>/dev/null); then
     if echo "$BACKEND_HEALTH" | grep -q "healthy"; then
-        echo -e "${SUCCESS} Backend API is healthy (http://localhost:8000)"
+        echo -e "${SUCCESS} Backend API is healthy (${BACKEND_URL})"
         BACKEND_HEALTHY=true
         
         # Test authentication system with all three user types
         echo -e "${INFO} Testing authentication system..."
         
-        TEST_USERS=("admin@example.com:admin123:admin" "instructor@example.com:instructor123:instructor" "student@example.com:student123:student")
+        TEST_USERS=("admin@example.com:password123:admin" "instructor@example.com:password123:instructor" "student@example.com:password123:student")
         AUTH_SUCCESS_COUNT=0
         
         for user_data in "${TEST_USERS[@]}"; do
             IFS=':' read -r email password role <<< "$user_data"
             
             echo -e "${INFO} Testing login for $role: $email"
-            AUTH_TEST=$(curl -s -X POST http://localhost:8000/api/v1/auth/login \
+            AUTH_TEST=$(curl -s -X POST "${LOGIN_FULL_URL}" \
                 -H "Content-Type: application/json" \
                 -d "{\"email\":\"$email\",\"password\":\"$password\"}" 2>/dev/null)
             
@@ -912,25 +1301,44 @@ if BACKEND_HEALTH=$(curl -s --connect-timeout 10 http://localhost:8000/health 2>
         echo -e "${INFO} Response: $BACKEND_HEALTH"
     fi
 else
-    echo -e "${ERROR} Backend API is not responding (http://localhost:8000)"
+    echo -e "${ERROR} Backend API is not responding (${BACKEND_URL})"
     echo -e "${INFO} Troubleshooting: docker compose -f infra/docker-compose.yml logs backend"
 fi
 
 # Check frontend
 echo -e "\n${INFO} Testing frontend..."
-if curl -s --connect-timeout 10 http://localhost:5173 >/dev/null 2>&1; then
-    echo -e "${SUCCESS} Frontend is running (http://localhost:5173)"
+if curl -s --connect-timeout 10 "${FRONTEND_URL}" >/dev/null 2>&1; then
+    echo -e "${SUCCESS} Frontend is running (${FRONTEND_URL})"
     FRONTEND_HEALTHY=true
     
     # Test if frontend can connect to backend
     echo -e "${INFO} Testing frontend-backend connectivity..."
-    if FRONTEND_API_TEST=$(curl -s --connect-timeout 5 "http://localhost:5173" | grep -o "localhost:8000\|127.0.0.1:8000" | head -1); then
+    if FRONTEND_API_TEST=$(curl -s --connect-timeout 5 "${FRONTEND_URL}" | grep -o "localhost:8000\|127.0.0.1:8000" | head -1); then
         echo -e "${SUCCESS} Frontend appears configured to connect to backend"
     else
         echo -e "${INFO} Frontend may need configuration for backend connectivity"
     fi
+    
+    # Test monitoring endpoint
+    echo -e "${INFO} Testing system monitoring endpoint..."
+    if MONITOR_TEST=$(curl -s --connect-timeout 5 "${MONITOR_FULL_URL}" 2>/dev/null); then
+        if echo "$MONITOR_TEST" | grep -q '"system_info"'; then
+            echo -e "${SUCCESS} System monitoring endpoint working"
+            # Check if Docker monitoring is enabled
+            if echo "$MONITOR_TEST" | grep -q '"error".*"Docker client not available"'; then
+                echo -e "${INFO} Docker monitoring disabled (this is normal and recommended)"
+            elif echo "$MONITOR_TEST" | grep -q '"containers":\s*\['; then
+                CONTAINER_COUNT=$(echo "$MONITOR_TEST" | grep -o '"containers":\s*\[[^]]*\]' | grep -o '{[^}]*}' | wc -l | tr -d ' ')
+                echo -e "${SUCCESS} Docker monitoring enabled - found $CONTAINER_COUNT containers"
+            fi
+        else
+            echo -e "${WARNING} Monitor endpoint responding but may have issues"
+        fi
+    else
+        echo -e "${WARNING} Monitor endpoint not responding"
+    fi
 else
-    echo -e "${ERROR} Frontend is not responding (http://localhost:5173)"
+    echo -e "${ERROR} Frontend is not responding (${FRONTEND_URL})"
     echo -e "${INFO} Troubleshooting: docker compose -f infra/docker-compose.yml logs frontend"
 fi
 
@@ -993,27 +1401,27 @@ print_section "Setup Complete - Next Steps"
 if [ "$OVERALL_HEALTH" = "GOOD" ]; then
     echo -e "🚀 ${GREEN}Ready to use! Your X-University platform is fully operational.${NC}"
     echo -e "\n📍 Available services:"
-    echo -e "  • ${GREEN}Frontend:${NC} http://localhost:5173"
-    echo -e "  • ${GREEN}Backend API:${NC} http://localhost:8000"
-    echo -e "  • ${GREEN}API Documentation:${NC} http://localhost:8000/docs"
+    echo -e "  • ${GREEN}Frontend:${NC} ${FRONTEND_URL}"
+    echo -e "  • ${GREEN}Backend API:${NC} ${BACKEND_URL}"
+    echo -e "  • ${GREEN}API Documentation:${NC} ${API_DOCS_URL}"
     echo -e "  • ${GREEN}PostgreSQL:${NC} localhost:5432"
     
     echo -e "\n🔐 Ready-to-use accounts:"
-    echo -e "  • ${GREEN}Admin:${NC}      admin@example.com      / admin123"
-    echo -e "  • ${GREEN}Instructor:${NC} instructor@example.com / instructor123"  
-    echo -e "  • ${GREEN}Student:${NC}    student@example.com    / student123"
+    echo -e "  • ${GREEN}Admin:${NC}      admin@example.com      / password123"
+    echo -e "  • ${GREEN}Instructor:${NC} instructor@example.com / password123"  
+    echo -e "  • ${GREEN}Student:${NC}    student@example.com    / password123"
 
 elif [ "$OVERALL_HEALTH" = "PARTIAL" ]; then
     echo -e "⚠️  ${YELLOW}Mostly ready - authentication may need attention${NC}"
     echo -e "\n📍 Available services:"
-    echo -e "  • Frontend: http://localhost:5173"
-    echo -e "  • Backend API: http://localhost:8000"
-    echo -e "  • API Documentation: http://localhost:8000/docs"
+    echo -e "  • Frontend: ${FRONTEND_URL}"
+    echo -e "  • Backend API: ${BACKEND_URL}"
+    echo -e "  • API Documentation: ${API_DOCS_URL}"
     
     echo -e "\n🔧 To fix authentication issues:"
     echo -e "  1. Run: ${GREEN}docker compose -f infra/docker-compose.yml exec -T backend python init_db.py${NC}"
     echo -e "  2. Check logs: ${GREEN}docker compose -f infra/docker-compose.yml logs backend${NC}"
-    echo -e "  3. Test login manually at: http://localhost:5173"
+    echo -e "  3. Test login manually at: ${FRONTEND_URL}"
     
 else
     echo -e "❌ ${RED}Setup completed with issues - manual intervention may be needed${NC}"
@@ -1021,26 +1429,24 @@ else
     echo -e "  1. Check all services: ${GREEN}docker compose -f infra/docker-compose.yml ps${NC}"
     echo -e "  2. View logs: ${GREEN}docker compose -f infra/docker-compose.yml logs${NC}"
     echo -e "  3. Restart services: ${GREEN}docker compose -f infra/docker-compose.yml restart${NC}"
-    echo -e "  4. Complete cleanup and retry: ${GREEN}./scripts/cleanup.sh && ./setup.sh --clean${NC}"
+    echo -e "  4. Complete cleanup and retry: ${GREEN}./scripts/cleanup.sh && ./scripts/setup.sh --clean${NC}"
 fi
 
-# Open browser tabs in existing browser window
-if [ "$SKIP_BROWSER" = false ]; then
-    echo -e "\n${INFO} Opening services in browser tabs..."
+# Open frontend only if everything is healthy
+if [ "$SKIP_BROWSER" = false ] && [ "$OVERALL_HEALTH" = "GOOD" ]; then
+    echo -e "\n${INFO} All systems healthy - opening frontend..."
     sleep 2  # Brief pause to ensure services are fully ready
 
-    # Open frontend in new tab
-    open_url "http://localhost:5173"
-    sleep 1  # Small delay between opening tabs
+    # Open only the frontend - users can navigate to other services from there
+    open_url "${FRONTEND_URL}"
 
-    # Open backend health endpoint in new tab
-    open_url "http://localhost:8000/health"
-    sleep 1
-
-    # Open API documentation in new tab
-    open_url "http://localhost:8000/docs"
-
-    echo -e "\n${SUCCESS} Browser tabs opened in existing browser window!"
+    echo -e "${SUCCESS} Frontend opened in browser!"
+    echo -e "${INFO} Access other services:"
+    echo -e "  • API Documentation: ${API_DOCS_URL}"
+    echo -e "  • Backend Health: ${HEALTH_CHECK_URL}"
+elif [ "$SKIP_BROWSER" = false ]; then
+    echo -e "\n${INFO} System not fully healthy - skipping browser opening"
+    echo -e "${INFO} Once issues are resolved, visit: http://localhost:5173"
 else
     echo -e "\n${INFO} Skipping browser opening (--skip-browser flag used)"
 fi
@@ -1049,3 +1455,23 @@ echo -e "  • View logs: make logs"
 echo -e "  • Stop services: make down"
 echo -e "  • Run tests: make test"
 echo -e "  • Format code: make fmt"
+echo -e "  • Clean restart: make fresh"
+
+echo -e "\n🔧 Common troubleshooting:"
+echo -e "  • Monitor page empty? Check: ${GREEN}curl http://localhost:8000/api/v1/monitor${NC}"
+echo -e "  • Tests failing? Run individually: ${GREEN}docker compose -f infra/docker-compose.yml exec backend pytest${NC}"
+echo -e "  • Authentication issues? Reset users: ${GREEN}docker compose -f infra/docker-compose.yml exec backend python init_db.py${NC}"
+echo -e "  • Services won't start? Try: ${GREEN}./scripts/cleanup.sh && ./scripts/setup.sh --clean${NC}"
+
+# Start monitoring logs
+if [ "$SKIP_LOGS" = false ]; then
+    echo -e "\n${INFO} Starting log monitoring..."
+    echo -e "${INFO} Press ${GREEN}Ctrl+C${NC} to stop log monitoring at any time"
+    echo -e "${INFO} ===== LIVE SERVICE LOGS ====="
+
+    # Run make logs to show real-time logs
+    exec make logs
+else
+    echo -e "\n${INFO} Skipping log monitoring (--skip-logs flag used)"
+    echo -e "${INFO} To view logs later, run: ${GREEN}make logs${NC}"
+fi

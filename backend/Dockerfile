@@ -18,7 +18,7 @@ COPY . .
 # Set Python path
 ENV PYTHONPATH=/app
 
-# Create non-root user
+# Create non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 RUN chown -R appuser:appuser /app
 USER appuser

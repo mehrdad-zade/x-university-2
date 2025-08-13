@@ -1,0 +1,146 @@
+{
+  "description": "X-University Development Environment Configuration",
+  "version": "1.0.0",
+  "environment": "development",
+  
+  "urls": {
+    "frontend": "http://localhost:5173",
+    "backend": "http://localhost:8000",
+    "api_base": "http://localhost:8000/api/v1",
+    "health_check": "http://localhost:8000/health",
+    "api_docs": "http://localhost:8000/docs"
+  },
+  
+  "endpoints": {
+    "auth": {
+      "login": "/api/v1/auth/login",
+      "register": "/api/v1/auth/register",
+      "logout": "/api/v1/auth/logout",
+      "refresh": "/api/v1/auth/refresh",
+      "me": "/api/v1/auth/me"
+    },
+    "monitor": {
+      "base": "/api/v1/monitor",
+      "database": "/api/v1/monitor/database/performance",
+      "logs": "/api/v1/monitor/logs",
+      "docker": "/api/v1/monitor/docker"
+    }
+  },
+  
+  "credentials": {
+    "default_password": "password123",
+    "users": {
+      "admin": {
+        "email": "admin@example.com",
+        "full_name": "Default Admin",
+        "role": "admin"
+      },
+      "instructor": {
+        "email": "instructor@example.com", 
+        "full_name": "Default Instructor",
+        "role": "instructor"
+      },
+      "student": {
+        "email": "student@example.com",
+        "full_name": "Default Student", 
+        "role": "student"
+      }
+    }
+  },
+  
+  "database": {
+    "name": "xu2",
+    "test_name": "xu2_test",
+    "user": "dev",
+    "password": "devpass123",
+    "host": "localhost",
+    "port": 5432
+  },
+  
+  "docker": {
+    "containers": {
+      "postgres": "xu2-postgres",
+      "backend": "xu2-backend", 
+      "frontend": "xu2-frontend"
+    },
+    "project_name": "x-university-infra",
+    "compose_file": "infra/docker-compose.yml"
+  },
+  
+  "timeouts": {
+    "docker_start": 60,
+    "service_health": 180,
+    "health_check_interval": 5,
+    "connection_retry": 10
+  },
+  
+  "ui_text": {
+    "navigation": {
+      "home": "Home",
+      "dashboard": "Dashboard", 
+      "courses": "Courses",
+      "monitor": "Monitor",
+      "login": "Login",
+      "logout": "Logout"
+    },
+    "buttons": {
+      "save": "Save",
+      "cancel": "Cancel",
+      "submit": "Submit",
+      "delete": "Delete",
+      "edit": "Edit",
+      "demo_admin": "Demo Admin",
+      "demo_instructor": "Demo Instructor", 
+      "demo_student": "Demo Student"
+    },
+    "forms": {
+      "email": "Email Address",
+      "password": "Password",
+      "full_name": "Full Name",
+      "confirm_password": "Confirm Password"
+    },
+    "login": {
+      "sign_in_title": "Sign in to X-University",
+      "access_dashboard": "Access your learning dashboard",
+      "demo_accounts": "Demo Accounts:",
+      "signing_in": "Signing in...",
+      "sign_in": "Sign in",
+      "demo_note": "This is a demo application. Click the demo account buttons above to quickly sign in."
+    },
+    "monitor": {
+      "title": "System Monitor",
+      "logs_title": "System Logs",
+      "db_performance_title": "Database Performance",
+      "docker_containers_title": "Docker Containers"
+    }
+  },
+  
+  "messages": {
+    "database": {
+      "connection_success": "Database connection established",
+      "migration_success": "Database migrations completed successfully",
+      "users_created": "Default users created successfully",
+      "users_exist": "Found existing users, skipping initialization"
+    },
+    "auth": {
+      "login_success": "Login successful",
+      "login_failed": "Authentication failed",
+      "logout_success": "Logged out successfully",
+      "credentials_info": "Login credentials:"
+    },
+    "setup": {
+      "checking_prereqs": "Checking Prerequisites",
+      "docker_starting": "Attempting to start Docker Desktop...",
+      "services_starting": "Starting Docker Services",
+      "database_setup": "Initializing database with default users...",
+      "setup_complete": "Setup Complete - Next Steps"
+    },
+    "status": {
+      "backend_healthy": "Backend: Healthy",
+      "backend_unhealthy": "Backend: Unhealthy", 
+      "frontend_running": "Frontend: Running",
+      "database_connected": "Database: Connected",
+      "all_systems_operational": "🎉 EXCELLENT: All systems are fully operational!"
+    }
+  }
+}

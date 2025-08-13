@@ -10,7 +10,10 @@ async def test_health_check(client: AsyncClient) -> None:
     """Test the health check endpoint."""
     response = await client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "healthy"}
+    data = response.json()
+    assert data["status"] == "healthy"
+    assert data["service"] == "x-university-api"
+    assert data["version"] == "0.1.0"
 
 
 @pytest.mark.asyncio
@@ -18,4 +21,8 @@ async def test_api_root(client: AsyncClient) -> None:
     """Test the API root endpoint."""
     response = await client.get("/api/v1/")
     assert response.status_code == 200
-    assert response.json() == {"message": "X University API v1"}
+    data = response.json()
+    assert data["message"] == "X University API v1"
+    assert data["version"] == "0.1.0"
+    assert data["status"] == "active"
+    assert data["documentation"] == "/docs"

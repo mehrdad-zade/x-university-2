@@ -16,6 +16,7 @@ from sqlalchemy import select
 from app.db.base import AsyncSessionLocal
 from app.models.auth import User, UserRole
 from app.core.security import hash_password
+from constants import DevCredentials, Messages
 
 
 async def create_default_users():
@@ -27,27 +28,27 @@ async def create_default_users():
             existing_users = result.scalars().all()
             
             if existing_users:
-                print(f"Found {len(existing_users)} existing users, skipping initialization.")
+                print(f"{Messages.DB_USERS_EXIST}")
                 return
             
-            # Create default users
+            # Create default users using centralized constants
             default_users = [
                 {
-                    "email": "admin@example.com",
-                    "password": "admin123",
-                    "full_name": "Default Admin",
+                    "email": DevCredentials.ADMIN_EMAIL,
+                    "password": DevCredentials.PASSWORD,
+                    "full_name": DevCredentials.ADMIN_NAME,
                     "role": UserRole.ADMIN,
                 },
                 {
-                    "email": "instructor@example.com",
-                    "password": "instructor123",
-                    "full_name": "Default Instructor",
+                    "email": DevCredentials.INSTRUCTOR_EMAIL,
+                    "password": DevCredentials.PASSWORD,
+                    "full_name": DevCredentials.INSTRUCTOR_NAME,
                     "role": UserRole.INSTRUCTOR,
                 },
                 {
-                    "email": "student@example.com",
-                    "password": "student123",
-                    "full_name": "Default Student",
+                    "email": DevCredentials.STUDENT_EMAIL,
+                    "password": DevCredentials.PASSWORD,
+                    "full_name": DevCredentials.STUDENT_NAME,
                     "role": UserRole.STUDENT,
                 }
             ]
@@ -67,11 +68,16 @@ async def create_default_users():
             
             # Commit all users
             await db.commit()
-            print("\n✅ Default users created successfully!")
-            print("\nLogin credentials:")
-            print("  Admin:      admin@example.com      / admin123")
-            print("  Instructor: instructor@example.com / instructor123")
-            print("  Student:    student@example.com    / student123")
+            print(f"\n{Messages.DB_USERS_CREATED}")
+            print(f"\n{Messages.LOGIN_CREDENTIALS_INFO}")
+            print(f"  Admin:      {DevCredentials.ADMIN_EMAIL} / {DevCredentials.PASSWORD}")
+            print(f"  Instructor: {DevCredentials.INSTRUCTOR_EMAIL} / {DevCredentials.PASSWORD}")
+            print(f"  Student:    {DevCredentials.STUDENT_EMAIL} / {DevCredentials.PASSWORD}")
+            
+        except Exception as e:
+            await db.rollback()
+            print(f"❌ Error creating default users: {e}")
+            raise
             
         except Exception as e:
             await db.rollback()
@@ -81,7 +87,7 @@ async def create_default_users():
 
 async def main():
     """Main initialization function."""
-    print("🚀 Initializing database with default users...")
+    print(f"🚀 {Messages.DATABASE_SETUP}")
     await create_default_users()
 
 

@@ -46,11 +46,34 @@ from app.core.config import settings
 engine = create_async_engine(
     settings.DATABASE_URL.replace("postgresql+psycopg://", "postgresql+asyncpg://"),
     echo=settings.DEBUG,  # Log SQL queries in debug mode
+    echo_pool=settings.DEBUG,  # Log connection pool events in debug mode
     future=True,  # Use SQLAlchemy 2.0 style
-    pool_size=5,  # Connection pool size
-    max_overflow=10,  # Additional connections beyond pool_size
-    pool_pre_ping=True,  # Validate connections before use
+    
+    # Connection Pool Optimization
+    pool_size=20,  # Base connection pool size (increased from 5)
+    max_overflow=40,  # Additional connections beyond pool_size (increased from 10)
+    pool_timeout=30,  # Timeout waiting for connection (seconds)
     pool_recycle=3600,  # Recycle connections after 1 hour
+    pool_pre_ping=True,  # Validate connections before use (prevents broken connections)
+    
+    # Connection Settings
+    connect_args={
+        "server_settings": {
+            # PostgreSQL session optimization
+            "application_name": "xu2_backend",
+            "timezone": "UTC",
+            # Performance settings (only session-level settings allowed here)
+            "track_io_timing": "on",
+            "track_functions": "pl",
+            "log_statement": "all",  # Log all statements for this session
+            "log_min_duration_statement": "1000",  # Log queries taking > 1 second
+        },
+        # AsyncPG-specific optimizations
+        "command_timeout": 60,  # Query timeout (60 seconds)
+        "statement_cache_size": 1024,  # Prepared statement cache
+        "max_cached_statement_lifetime": 300,  # Cache lifetime (5 minutes)
+        "max_cacheable_statement_size": 15360,  # Max statement size to cache (15KB)
+    },
 )
 
 # Create async session factory for database operations

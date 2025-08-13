@@ -1,0 +1,83 @@
+# Docker Compose override for reliable PostgreSQL startup
+
+services:
+  postgres:
+    # Extended health check for reliable startup detection
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dev} -d ${POSTGRES_DB:-xu2} -t 5 || exit 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 24  # Wait up to 2 minutes
+      start_period: 60s  # Allow 1 minute for initial startup
+    
+    # Ensure proper shutdown handling
+    stop_grace_period: 60s
+    stop_signal: SIGTERM
+    
+    # Resource limits to prevent resource starvation
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+    
+    # Additional environment variables for reliability
+    environment:
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C --auth-local=trust --auth-host=md5"
+      POSTGRES_HOST_AUTH_METHOD: md5
+    
+    # Optimized command with conservative settings for reliability
+    command: >
+      postgres
+      -c logging_collector=off
+      -c log_destination=stderr
+      -c log_statement=none
+      -c log_min_duration_statement=-1
+      -c shared_buffers=128MB
+      -c effective_cache_size=512MB
+      -c maintenance_work_mem=64MB
+      -c checkpoint_completion_target=0.7
+      -c wal_buffers=4MB
+      -c default_statistics_target=100
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=100
+      -c work_mem=4MB
+      -c max_connections=100
+      -c shared_preload_libraries=''
+      -c fsync=on
+      -c synchronous_commit=on
+      -c full_page_writes=on
+    
+    # Volume optimization - match main docker-compose.yml volume mount
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-data:/docker-entrypoint-initdb.d:ro
+    
+    # Ensure proper startup order with longer timeout
+    depends_on: []
+
+  backend:
+    # Ensure backend waits for fully healthy PostgreSQL
+    depends_on:
+      postgres:
+        condition: service_healthy
+    
+    # Add restart policy for reliability
+    restart: unless-stopped
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  frontend:
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+    driver: local

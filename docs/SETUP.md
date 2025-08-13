@@ -9,7 +9,7 @@ Complete guide for setting up the X University 2.0 development environment.
 # Complete fresh setup - removes everything and rebuilds
 make fresh
 # OR
-./scripts/cleanup.sh && ./setup.sh --clean
+./scripts/cleanup.sh && ./scripts/setup.sh --clean
 ```
 
 ### Existing Environment Setup
@@ -17,18 +17,18 @@ make fresh
 # Preserves existing data
 make setup
 # OR  
-./setup.sh
+./scripts/setup.sh
 ```
 
 ### Single Command Setup
 ```bash
 # Standard setup with all features
-./setup.sh                    
+./scripts/setup.sh                    
 
 # Available options
-./setup.sh --clean           # Clean install (removes existing environments)
-./setup.sh --skip-tests      # Skip test execution during setup
-./setup.sh --skip-browser    # Don't auto-open browser tabs
+./scripts/setup.sh --clean           # Clean install (removes existing environments)
+./scripts/setup.sh --skip-tests      # Skip test execution during setup
+./scripts/setup.sh --skip-browser    # Don't auto-open browser tabs
 ```
 
 ## Prerequisites
@@ -137,9 +137,9 @@ Test the authentication system with these development credentials:
 
 | Role | Email | Password |
 |------|-------|----------|
-| **Admin** | admin@example.com | admin123 |
-| **Instructor** | instructor@example.com | instructor123 |
-| **Student** | student@example.com | student123 |
+| **Admin** | admin@example.com | password123 |
+| **Instructor** | instructor@example.com | password123 |
+| **Student** | student@example.com | password123 |
 
 > **Note**: These are development-only credentials. In production, create secure admin accounts through the API.
 

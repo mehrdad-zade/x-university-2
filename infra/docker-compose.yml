@@ -6,16 +6,57 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-dev}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpass}
       POSTGRES_DB: ${POSTGRES_DB:-xu2}
+      # Performance optimization settings - more conservative for reliability
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+      # Additional startup reliability settings
+      PGUSER: ${POSTGRES_USER:-dev}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-devpass}
+      PGDATABASE: ${POSTGRES_DB:-xu2}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-data:/docker-entrypoint-initdb.d
+    command: >
+      postgres
+      -c shared_preload_libraries=pg_stat_statements
+      -c pg_stat_statements.track=all
+      -c pg_stat_statements.max=10000
+      -c shared_buffers=128MB
+      -c effective_cache_size=512MB
+      -c maintenance_work_mem=32MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=8MB
+      -c default_statistics_target=100
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=100
+      -c work_mem=2MB
+      -c huge_pages=off
+      -c max_connections=100
+      -c max_worker_processes=4
+      -c max_parallel_workers_per_gather=2
+      -c max_parallel_workers=4
+      -c log_statement=none
+      -c log_min_duration_statement=5000
+      -c log_checkpoints=off
+      -c log_connections=off
+      -c log_disconnections=off
+      -c log_lock_waits=on
+      -c fsync=on
+      -c synchronous_commit=on
+      -c full_page_writes=on
+      -c checkpoint_timeout=15min
+      -c max_wal_size=2GB
+      -c min_wal_size=1GB
+    shm_size: 128mb
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB} || exit 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+    stop_grace_period: 30s
 
   neo4j:
     image: neo4j:5.15
@@ -64,11 +105,17 @@ services:
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-}
       PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-}
+      ENABLE_DOCKER_MONITORING: ${ENABLE_DOCKER_MONITORING:-false}
     ports:
       - "8000:8000"
     volumes:
       - ../backend:/app
       - /app/__pycache__
+      - ./dev.config.json:/app/dev.config.json:ro
+      # Uncomment the next 2 lines to enable Docker monitoring (requires privileged access):
+      # - /var/run/docker.sock:/var/run/docker.sock:ro
+    # user: "root"  # Uncomment this line to enable Docker monitoring (security warning!)
+    # Note: Docker monitoring requires root access to the Docker socket which reduces security
     depends_on:
       postgres:
         condition: service_healthy
@@ -91,6 +138,7 @@ services:
     volumes:
       - ../frontend:/app
       - /app/node_modules
+      - ./dev.config.json:/app/dev.config.json:ro
     depends_on:
       - backend
     environment:

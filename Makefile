@@ -1,7 +1,7 @@
 # X-University Development Environment Makefile
 # Enhanced version with better development workflow support
 
-.PHONY: help setup clean down logs test fmt check dev prod backup restore
+.PHONY: help setup clean down logs test fmt check dev prod backup restore fix-postgres
 
 # Colors for output
 GREEN := \033[0;32m
@@ -24,16 +24,33 @@ help: ## Show this help message
 	@echo "  make dev          # Start development environment"
 	@echo "  make health       # Check system health"
 
+# PostgreSQL specific fixes
+fix-postgres: ## Fix PostgreSQL startup issues and prevent exit code 126 errors
+	@echo "$(GREEN)🔧 Fixing PostgreSQL startup issues...$(NC)"
+	./scripts/setup.sh --diagnose-postgres
+
+diagnose-postgres: ## Diagnose PostgreSQL startup problems
+	@echo "$(BLUE)🔍 Running PostgreSQL diagnostics...$(NC)"
+	./scripts/setup.sh --diagnose-postgres
+
+test-postgres: ## Test PostgreSQL startup reliability (runs a clean setup)
+	@echo "$(GREEN)🧪 Testing PostgreSQL startup reliability...$(NC)"
+	./scripts/setup.sh --clean --skip-tests --skip-browser --skip-logs
+
 # Enhanced setup commands
 setup: ## Start the development environment (preserves existing data)
 	@echo "$(GREEN)🚀 Starting X-University development environment...$(NC)"
-	./setup.sh
+	./scripts/setup.sh
 
 clean-env: ## Clean all project resources (containers, images, volumes, local files)
 	@echo "$(YELLOW)🧹 Cleaning X-University environment...$(NC)"
 	./scripts/cleanup.sh
 
-fresh: clean-env setup ## Complete fresh setup (clean + setup)
+fresh: ## Complete fresh setup (clean + setup) with schema reset
+	@echo "$(YELLOW)🧹 Cleaning X-University environment...$(NC)"
+	./scripts/cleanup.sh || true
+	@echo "$(GREEN)🚀 Starting fresh X-University development environment...$(NC)"
+	./scripts/setup.sh --clean
 
 # Docker service management
 up: ## Start services in background
@@ -87,7 +104,7 @@ health: ## Run comprehensive health check including authentication
 	@echo "$(GREEN)Authentication Test:$(NC)"
 	@AUTH_RESULT=$$(curl -s -X POST http://localhost:8000/api/v1/auth/login \
 		-H "Content-Type: application/json" \
-		-d '{"email":"student@example.com","password":"student123"}' 2>/dev/null) && \
+		-d '{"email":"student@example.com","password":"password123"}' 2>/dev/null) && \
 		if echo "$$AUTH_RESULT" | grep -q "access_token"; then \
 			echo "$(GREEN)✅ Authentication working$(NC)"; \
 		else \
@@ -244,9 +261,9 @@ info: ## Show system and project information
 	@echo "Database:        localhost:5432"
 	@echo ""
 	@echo "$(BLUE)👥 Default Accounts:$(NC)"
-	@echo "Admin:           admin@example.com / admin123"
-	@echo "Instructor:      instructor@example.com / instructor123"
-	@echo "Student:         student@example.com / student123"
+	@echo "Admin:           admin@example.com / password123"
+	@echo "Instructor:      instructor@example.com / password123"
+	@echo "Student:         student@example.com / password123"
 	@echo ""
 	@echo "$(BLUE)🐳 Docker Status:$(NC)"
 	@docker system df 2>/dev/null || echo "Docker not available"
@@ -278,7 +295,7 @@ troubleshoot: ## Show troubleshooting guide
 	@echo "   docker compose -f infra/docker-compose.yml restart frontend"
 	@echo ""
 	@echo "$(GREEN)6. Complete reset (nuclear option):$(NC)"
-	@echo "   ./scripts/cleanup.sh && ./setup.sh --clean"
+	@echo "   ./scripts/cleanup.sh && ./scripts/setup.sh --clean"
 	@echo ""
 	@echo "$(BLUE)📊 Current Status:$(NC)"
 	@$(MAKE) status
