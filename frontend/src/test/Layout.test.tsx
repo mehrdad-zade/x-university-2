@@ -23,7 +23,13 @@ vi.mock('../lib/auth', async (importOriginal) => {
 });
 
 const LayoutWrapper = () => (
-  <MemoryRouter initialEntries={['/']}>
+  <MemoryRouter 
+    initialEntries={['/']}
+    future={{
+      v7_startTransition: true,
+      v7_relativeSplatPath: true
+    }}
+  >
     <Routes>
       <Route path="/" element={<Layout />}>
         <Route index element={<div>Test content</div>} />

@@ -32,18 +32,42 @@ class UserRegisterRequest(UserBase):
     @field_validator('password')
     @classmethod
     def validate_password(cls, v: str) -> str:
-        """Validate password strength."""
+        """Validate password strength with comprehensive requirements."""
+        # Length check
         if len(v) < 8:
             raise ValueError('Password must be at least 8 characters long')
         
-        # Check for at least one letter and one number
-        has_letter = any(c.isalpha() for c in v)
-        has_number = any(c.isdigit() for c in v)
+        # Character type checks
+        has_upper = any(c.isupper() for c in v)
+        has_lower = any(c.islower() for c in v)
+        has_digit = any(c.isdigit() for c in v)
+        has_special = any(not c.isalnum() for c in v)
         
-        if not has_letter:
-            raise ValueError('Password must contain at least one letter')
-        if not has_number:
+        if not has_upper:
+            raise ValueError('Password must contain at least one uppercase letter')
+        if not has_lower:
+            raise ValueError('Password must contain at least one lowercase letter')
+        if not has_digit:
             raise ValueError('Password must contain at least one number')
+        if not has_special:
+            raise ValueError('Password must contain at least one special character')
+        
+        # Check for common words (substring matches for common terms)
+        password_lower = v.lower()
+        common_substrings = ['password', 'admin', 'user', 'login', 'qwerty']
+        for word in common_substrings:
+            if word in password_lower:
+                raise ValueError(f'Password cannot contain common word: {word}')
+        
+        # Check for exact matches to very common passwords
+        common_passwords = ['123456789', '12345678', '1234567', '123456']
+        if password_lower in common_passwords:
+            raise ValueError('Password is too common')
+        
+        # Check for repeated characters (more than 3 consecutive)
+        for i in range(len(v) - 3):
+            if len(set(v[i:i+4])) == 1:
+                raise ValueError('Password cannot contain more than 3 consecutive identical characters')
             
         return v
     

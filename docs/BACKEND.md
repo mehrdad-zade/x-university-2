@@ -79,8 +79,16 @@ backend/
 ## API Endpoints
 
 ### Authentication & User Management (`/api/v1/auth`)
-- **POST /register** - Register new user account
+- **POST /register** - Register new user account with enhanced security
+  - Real-time password strength validation
+  - Email normalization and uniqueness checking
+  - Terms of service and privacy policy acceptance
+  - Automatic login after successful registration
+  - Returns JWT tokens for immediate access
 - **POST /login** - Authenticate user and get tokens
+  - Account lockout protection (5 failed attempts = 30min lockout)
+  - Failed login attempt tracking and reset on success
+  - Session creation and device tracking
 - **POST /refresh** - Refresh access token using refresh token
 - **POST /logout** - Logout and revoke tokens
 - **GET /me** - Get current user profile with session stats
@@ -192,10 +200,19 @@ Access via: `from constants import URLs, Database, DevCredentials`
 
 ### 🔐 Enhanced Authentication System
 - **JWT token-based authentication** with access and refresh tokens
-- **Session management** with device tracking and revocation
-- **User profile endpoints** with detailed session statistics
+- **Enhanced user registration** with real-time validation and security features:
+  - Password strength checking (8+ chars, mixed case, numbers, symbols)
+  - Email normalization and uniqueness validation
+  - Role selection (student, instructor, admin)
+  - Terms of service and privacy policy acceptance with timestamps
+  - Automatic profile completion status tracking
+- **Account security features**:
+  - Failed login attempt tracking and account lockout (5 attempts = 30min lockout)
+  - Password change timestamp tracking for security auditing
+  - Email verification status (ready for future implementation)
+  - Session management with device tracking and revocation
 - **Role-based access control** (Admin, Instructor, Student)
-- **Secure password hashing** using bcrypt
+- **Secure password hashing** using bcrypt with salt rounds
 
 ### 📊 System Monitoring Suite
 - **Real-time system metrics**: CPU, memory, disk, network usage
@@ -250,7 +267,17 @@ pytest -m "unit"
 ## Security Features
 
 ### Authentication Security
-- **JWT tokens** with configurable expiration
+- **JWT tokens** with configurable expiration (15min access, 7day refresh)
+- **Enhanced user registration security**:
+  - Strong password requirements with server-side validation
+  - Protection against common passwords and repeated characters
+  - Email normalization to prevent duplicate accounts
+  - Terms acceptance tracking with timestamps
+- **Account protection features**:
+  - Account lockout after 5 failed login attempts (30-minute lockout)
+  - Failed login attempt counters with automatic reset on success
+  - Password change tracking for security auditing
+  - Session management with device and IP tracking
 - **Refresh token rotation** for enhanced security
 - **Session revocation** support (single session or all sessions)
 - **Password hashing** using bcrypt with salt rounds

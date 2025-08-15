@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../lib/auth';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { ApiError } from '../lib/api';
 import { UI_TEXT, getDemoCredentials } from '../constants';
 
@@ -9,12 +9,20 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   // Get the page the user tried to access before login
   const from = location.state?.from?.pathname || '/dashboard';
+  
+  // Check for success message from registration
+  useEffect(() => {
+    if (location.state?.message) {
+      setSuccessMessage(location.state.message);
+    }
+  }, [location.state?.message]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -90,6 +98,12 @@ export default function LoginPage() {
         </div>
 
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+          {successMessage && (
+            <div className="rounded-md bg-green-50 p-4 border border-green-200">
+              <div className="text-sm text-green-700">{successMessage}</div>
+            </div>
+          )}
+          
           {error && (
             <div className="rounded-md bg-red-50 p-4">
               <div className="text-sm text-red-700">{error}</div>
@@ -152,9 +166,22 @@ export default function LoginPage() {
               )}
             </button>
           </div>
+
+          {/* Register Link */}
+          <div className="text-center">
+            <p className="text-sm text-gray-600">
+              Don't have an account?{' '}
+              <Link
+                to="/register"
+                className="font-medium text-blue-600 hover:text-blue-500 transition-colors"
+              >
+                Create one here
+              </Link>
+            </p>
+          </div>
         </form>
 
-        <div className="text-center">
+        <div className="text-center mt-6">
           <p className="text-xs text-gray-600">
             {UI_TEXT.LOGIN.DEMO_NOTE}
           </p>

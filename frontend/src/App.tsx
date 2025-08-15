@@ -31,6 +31,9 @@ import { ProtectedRoute, PublicRoute } from './components/ProtectedRoute'
 import Layout from './components/Layout'
 import HomePage from './pages/HomePage'
 import LoginPage from './pages/LoginPage'
+import RegisterPage from './pages/RegisterPage'
+import TermsPage from './pages/TermsPage'
+import PrivacyPage from './pages/PrivacyPage'
 import DashboardPage from './pages/DashboardPage'
 import MonitorPage from './pages/MonitorPage'
 
@@ -57,6 +60,17 @@ function App() {
               <LoginPage />
             </PublicRoute>
           } />
+          
+          {/* Public register page - only accessible when not authenticated */}
+          <Route path="/register" element={
+            <PublicRoute>
+              <RegisterPage />
+            </PublicRoute>
+          } />
+          
+          {/* Legal pages - accessible to all */}
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
           
           {/* Protected dashboard - only accessible when authenticated */}
           <Route path="/dashboard" element={

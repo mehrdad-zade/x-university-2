@@ -28,7 +28,7 @@
   },
   
   "credentials": {
-    "default_password": "password123",
+    "default_password": "DevSecret123!",
     "users": {
       "admin": {
         "email": "admin@example.com",

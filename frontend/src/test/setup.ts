@@ -37,3 +37,19 @@ Object.defineProperty(globalThis, 'ResizeObserver', {
     disconnect: vi.fn()
   }))
 })
+
+// Suppress specific React warnings in tests
+const originalConsoleError = console.error
+console.error = (...args) => {
+  // Suppress React Router Future Flag warnings and act() warnings in test environment
+  if (
+    typeof args[0] === 'string' && 
+    (args[0].includes('React Router Future Flag Warning') ||
+     args[0].includes('Warning: An update to') ||
+     args[0].includes('wrapped in act(...)')
+    )
+  ) {
+    return
+  }
+  originalConsoleError.apply(console, args)
+}

@@ -37,14 +37,14 @@ router = APIRouter()
 
 @router.post(
     "/register",
-    response_model=AuthSuccessResponse,
+    response_model=TokenResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Register new user",
-    description="Register a new user account with email and password",
+    description="Register a new user account with email and password, returns authentication tokens",
     responses={
         201: {
-            "description": "User registered successfully",
-            "model": AuthSuccessResponse
+            "description": "User registered successfully with authentication tokens",
+            "model": TokenResponse
         },
         400: {
             "description": "Registration failed - invalid data or email already exists",
@@ -56,12 +56,12 @@ async def register(
     request: Request,
     user_data: UserRegisterRequest,
     auth_data: Annotated[tuple, Depends(get_auth_service_with_client_info)]
-) -> AuthSuccessResponse:
+) -> TokenResponse:
     """
     Register a new user account.
     
     Creates a new user with the provided information and returns
-    both the user data and authentication tokens.
+    authentication tokens for immediate login.
     """
     auth_service, user_agent, ip_address = auth_data
     
@@ -72,10 +72,7 @@ async def register(
             ip_address=ip_address
         )
         
-        return AuthSuccessResponse(
-            message="Registration successful",
-            user=user_response
-        )
+        return token_response
         
     except AuthError as e:
         raise HTTPException(

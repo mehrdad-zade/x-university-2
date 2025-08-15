@@ -49,6 +49,12 @@ class AuthService:
         """
         Register a new user and create initial session.
         
+        Enhanced with security best practices:
+        - Email uniqueness validation
+        - Password strength enforcement (handled by schema)
+        - Terms acceptance tracking
+        - Profile completion initialization
+        
         Args:
             user_data: User registration data
             user_agent: User's browser/client info
@@ -69,12 +75,22 @@ class AuthService:
             # Hash password
             password_hash = hash_password(user_data.password)
             
-            # Create user
+            # Create user with security fields
+            current_time = datetime.now(timezone.utc)
             user = User(
                 email=user_data.email,
                 password_hash=password_hash,
                 full_name=user_data.full_name,
-                role=user_data.role
+                role=user_data.role,
+                # Security and compliance fields
+                terms_accepted=True,
+                terms_accepted_at=current_time,
+                privacy_policy_accepted=True,
+                password_changed_at=current_time,
+                # Profile fields
+                profile_completed=True,  # Basic info is complete
+                # Email verification (to be implemented later)
+                email_verified=False,
             )
             
             self.db.add(user)
@@ -127,6 +143,11 @@ class AuthService:
         """
         Authenticate user and create new session.
         
+        Enhanced with security features:
+        - Account locking after failed attempts
+        - Failed login attempt tracking
+        - Account status validation
+        
         Args:
             login_data: User login credentials
             user_agent: User's browser/client info
@@ -136,7 +157,7 @@ class AuthService:
             Tuple of user response and token response
             
         Raises:
-            AuthError: If credentials are invalid or user is inactive
+            AuthError: If credentials are invalid or user is inactive/locked
         """
         try:
             # Get user by email
@@ -144,13 +165,23 @@ class AuthService:
             if not user:
                 raise AuthError("Invalid credentials")
             
-            # Verify password
-            if not verify_password(login_data.password, user.password_hash):
-                raise AuthError("Invalid credentials")
+            # Check if account is locked
+            if user.is_locked:
+                raise AuthError(f"Account is temporarily locked. Try again later.")
             
             # Check if user is active
             if not user.is_active:
                 raise AuthError("Account is deactivated")
+            
+            # Verify password
+            if not verify_password(login_data.password, user.password_hash):
+                # Increment failed login attempts
+                user.increment_failed_login_attempts()
+                await self.db.commit()
+                raise AuthError("Invalid credentials")
+            
+            # Reset failed login attempts on successful login
+            user.reset_failed_login_attempts()
             
             # Update last login
             user.last_login = datetime.now(timezone.utc)
