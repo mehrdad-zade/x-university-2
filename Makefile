@@ -176,6 +176,10 @@ test-backend: ## Run backend tests
 
 test-frontend: ## Run frontend tests  
 	@echo "$(GREEN)Running frontend tests...$(NC)"
+	docker compose -f infra/docker-compose.yml exec frontend npm run test:run
+
+test-frontend-watch: ## Run frontend tests in watch mode
+	@echo "$(GREEN)Running frontend tests in watch mode...$(NC)"
 	docker compose -f infra/docker-compose.yml exec frontend npm test
 
 # Container shell access

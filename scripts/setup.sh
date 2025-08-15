@@ -218,9 +218,15 @@ cleanup_postgres_state() {
 #            • Cleans Node.js dependencies
 #            • Removes Docker volumes and PostgreSQL state
 #   --skip-tests: Skip running tests during setup
-#   --skip-browser: Skip automatically opening browser tabs
+#   --skip-browser: Skip automatically opening frontend in Chrome browser
 #   --skip-logs: Skip showing live logs after setup
 #   --diagnose-postgres: Run PostgreSQL diagnostic information gathering
+#
+# Browser Behavior:
+# - Automatically opens frontend (http://localhost:5173) in Google Chrome
+# - Only opens if all services are healthy and --skip-browser is not used
+# - Requires Google Chrome to be installed on the system
+# - Falls back to Chromium on Linux if Chrome is not available
 #
 # Status Checks:
 # - Verifies Docker Desktop is running (auto-starts on macOS)
@@ -1170,79 +1176,67 @@ if [ "$SKIP_TESTS" = false ]; then
     fi
     
     echo -e "${INFO} Running frontend tests..."
-    if docker compose -f infra/docker-compose.yml exec -T frontend npm test; then
+    if docker compose -f infra/docker-compose.yml exec -T frontend npm run test:run; then
         echo -e "${SUCCESS} Frontend tests passed"
     else
         echo -e "${WARNING} Frontend tests failed - this may not prevent normal operation"
-        echo -e "${INFO} To run tests manually later: docker compose -f infra/docker-compose.yml exec frontend npm test"
+        echo -e "${INFO} To run tests manually later: docker compose -f infra/docker-compose.yml exec frontend npm run test:run"
     fi
     
     echo -e "${INFO} Tests completed - check individual results above"
 fi
 
-# Function to open URL in browser tab (not new window)
+# Function to open URL in Chrome browser only
 open_url() {
     local url=$1
-    echo -e "${INFO} Opening $url in browser tab..."
+    echo -e "${INFO} Opening $url in Chrome browser..."
     
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        # macOS - Force new tab in existing browser window
+        # macOS - Open in Google Chrome
         if command_exists "osascript"; then
-            # Use AppleScript to open in new tab of existing browser
+            # Use AppleScript to open in new tab of Chrome
             osascript -e "
-                tell application \"System Events\"
-                    set browserList to (name of every process whose background only is false)
-                    if browserList contains \"Safari\" then
-                        tell application \"Safari\"
-                            activate
-                            tell window 1 to set current tab to (make new tab with properties {URL:\"$url\"})
-                        end tell
-                    else if browserList contains \"Google Chrome\" then
-                        tell application \"Google Chrome\"
-                            activate
-                            tell window 1 to make new tab with properties {URL:\"$url\"}
-                        end tell
-                    else if browserList contains \"Firefox\" then
-                        tell application \"Firefox\"
-                            activate
-                        end tell
-                        do shell script \"open -a Firefox '$url'\"
-                    else
-                        -- Fallback to default browser in new tab
-                        do shell script \"open -g '$url'\"
+                tell application \"Google Chrome\"
+                    activate
+                    if (count of windows) = 0 then
+                        make new window
                     end if
+                    tell window 1 to make new tab with properties {URL:\"$url\"}
                 end tell
-            " 2>/dev/null || open -g "$url"
+            " 2>/dev/null || open -a "Google Chrome" "$url"
         else
-            # Fallback - open in background (new tab if browser is running)
-            open -g "$url"
+            # Fallback - open with Chrome directly
+            open -a "Google Chrome" "$url"
         fi
     elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        # Linux - Try to open in new tab of existing browser
-        if command_exists "xdg-open"; then
-            # Most Linux systems
-            xdg-open "$url"
-        elif command_exists "firefox"; then
-            # Firefox with new tab flag
-            firefox --new-tab "$url" &
-        elif command_exists "google-chrome"; then
-            # Chrome with new tab flag
+        # Linux - Open in Google Chrome
+        if command_exists "google-chrome"; then
             google-chrome --new-tab "$url" &
         elif command_exists "chromium"; then
-            # Chromium with new tab flag
+            # Fallback to Chromium
             chromium --new-tab "$url" &
         else
-            echo -e "${ERROR} Could not find a browser to open $url"
+            echo -e "${ERROR} Chrome/Chromium not found. Please install Google Chrome."
+            return 1
         fi
     elif [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]]; then
-        # Windows - Use PowerShell to open in new tab
-        if command_exists "powershell"; then
-            powershell -Command "Start-Process '$url'" 2>/dev/null || start "$url"
+        # Windows - Open in Chrome
+        if command_exists "chrome"; then
+            chrome --new-tab "$url"
         else
-            start "$url"
+            # Try common Chrome installation paths
+            if [ -f "/c/Program Files/Google/Chrome/Application/chrome.exe" ]; then
+                "/c/Program Files/Google/Chrome/Application/chrome.exe" --new-tab "$url"
+            elif [ -f "/c/Program Files (x86)/Google/Chrome/Application/chrome.exe" ]; then
+                "/c/Program Files (x86)/Google/Chrome/Application/chrome.exe" --new-tab "$url"
+            else
+                echo -e "${ERROR} Chrome not found. Please install Google Chrome."
+                return 1
+            fi
         fi
     else
         echo -e "${ERROR} Unsupported OS type: $OSTYPE"
+        return 1
     fi
 }
 
@@ -1432,23 +1426,23 @@ else
     echo -e "  4. Complete cleanup and retry: ${GREEN}./scripts/cleanup.sh && ./scripts/setup.sh --clean${NC}"
 fi
 
-# Open frontend only if everything is healthy
+# Open frontend in Chrome if everything is healthy
 if [ "$SKIP_BROWSER" = false ] && [ "$OVERALL_HEALTH" = "GOOD" ]; then
-    echo -e "\n${INFO} All systems healthy - opening frontend..."
+    echo -e "\n${INFO} All systems healthy - opening frontend in Chrome..."
     sleep 2  # Brief pause to ensure services are fully ready
 
-    # Open only the frontend - users can navigate to other services from there
-    open_url "${FRONTEND_URL}"
-
-    echo -e "${SUCCESS} Frontend opened in browser!"
-    echo -e "${INFO} Access other services:"
-    echo -e "  • API Documentation: ${API_DOCS_URL}"
-    echo -e "  • Backend Health: ${HEALTH_CHECK_URL}"
+    # Open only the frontend in Chrome
+    if open_url "${FRONTEND_URL}"; then
+        echo -e "${SUCCESS} Frontend opened in Chrome browser!"
+    else
+        echo -e "${WARNING} Could not open Chrome. Please visit: ${FRONTEND_URL}"
+    fi
 elif [ "$SKIP_BROWSER" = false ]; then
     echo -e "\n${INFO} System not fully healthy - skipping browser opening"
-    echo -e "${INFO} Once issues are resolved, visit: http://localhost:5173"
+    echo -e "${INFO} Once issues are resolved, visit: ${FRONTEND_URL}"
 else
     echo -e "\n${INFO} Skipping browser opening (--skip-browser flag used)"
+    echo -e "${INFO} Frontend available at: ${FRONTEND_URL}"
 fi
 echo -e "\nUseful commands:"
 echo -e "  • View logs: make logs"
@@ -1465,13 +1459,14 @@ echo -e "  • Services won't start? Try: ${GREEN}./scripts/cleanup.sh && ./scri
 
 # Start monitoring logs
 if [ "$SKIP_LOGS" = false ]; then
-    echo -e "\n${INFO} Starting log monitoring..."
+    echo -e "\n${INFO} Starting log monitoring (warnings and errors only)..."
     echo -e "${INFO} Press ${GREEN}Ctrl+C${NC} to stop log monitoring at any time"
-    echo -e "${INFO} ===== LIVE SERVICE LOGS ====="
+    echo -e "${INFO} ===== LIVE SERVICE LOGS (WARNINGS & ERRORS) ====="
 
-    # Run make logs to show real-time logs
-    exec make logs
+    # Run filtered logs to show only warnings and errors
+    docker compose -f infra/docker-compose.yml logs -f --no-log-prefix 2>/dev/null | grep -i --line-buffered '\(warn\|error\|fail\|fatal\|exception\|traceback\|critical\)' || echo -e "${SUCCESS} No warnings or errors detected in logs"
 else
     echo -e "\n${INFO} Skipping log monitoring (--skip-logs flag used)"
     echo -e "${INFO} To view logs later, run: ${GREEN}make logs${NC}"
+    echo -e "${INFO} To view filtered logs, run: ${GREEN}make logs | grep -i 'warn\\|error\\|fail\\|fatal\\|exception'${NC}"
 fi
