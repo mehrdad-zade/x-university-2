@@ -22,6 +22,7 @@ X University 2.0 represents a paradigm shift in educational technology, offering
 - **Python 3.12** - Backend development
 - **Node.js 20+** - Frontend development
 - **Git** - Version control
+- **Gmail App Password** - For email functionality, see [Gmail App Password Setup](https://support.google.com/accounts/answer/185833)
 
 ### Get Started in 60 Seconds
 

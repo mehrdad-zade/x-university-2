@@ -79,6 +79,28 @@ class Settings(BaseSettings):
     STRIPE_WEBHOOK_SECRET: str = ""
     PAYPAL_CLIENT_ID: str = ""
     PAYPAL_CLIENT_SECRET: str = ""
+    
+    # ========================================
+    # EMAIL CONFIGURATION
+    # ========================================
+    # Email backend: "smtp", "sendgrid", "ses", "mock"
+    EMAIL_BACKEND: str = "mock"
+    
+    # SMTP settings
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    
+    # Email addresses and branding
+    FROM_EMAIL: str = "noreply@x-university.edu"
+    SUPPORT_EMAIL: str = "support@x-university.edu"
+    
+    # SendGrid settings (if using SendGrid backend)
+    SENDGRID_API_KEY: str = ""
+    
+    # Frontend URL for email links
+    FRONTEND_URL: str = "http://localhost:5173"
 
     @field_validator("ALLOWED_ORIGINS", mode='before')
     def validate_cors_origins(cls, value: Any) -> Union[list[str], str]:

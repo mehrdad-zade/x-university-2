@@ -106,6 +106,16 @@ services:
       PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-}
       PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-}
       ENABLE_DOCKER_MONITORING: ${ENABLE_DOCKER_MONITORING:-false}
+      # Email configuration
+      EMAIL_BACKEND: ${EMAIL_BACKEND:-mock}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      FROM_EMAIL: ${FROM_EMAIL:-noreply@x-university.edu}
+      SUPPORT_EMAIL: ${SUPPORT_EMAIL:-support@x-university.edu}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
     ports:
       - "8000:8000"
     volumes:
