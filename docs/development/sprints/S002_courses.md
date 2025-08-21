@@ -21,3 +21,5 @@ Subjects math and reading. Ages 4–20. Course > Lesson > Material.
 
 ## Acceptance
 - Seed 2 starter courses per subject with 3–5 lessons. Filtering works.
+
+//todo: design the db for scalability of courses and topics per age group
